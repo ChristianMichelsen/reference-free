@@ -17,18 +17,8 @@ function get_record(filename)
     # Open a BAM file.
     reader = open(BAM.Reader, filename)
 
-    # local flag
-    # local cigar
-    # local seq
-    # local md
-
-    # seqs = String[]
-    # refs = String[]
-
     counter = 1
 
-    # local seq
-    # local ref
     local last_record
 
     record = BAM.Record()
@@ -38,19 +28,10 @@ function get_record(filename)
 
         # `record` is a BAM.Record object.
         if BAM.ismapped(record)
-
             last_record = record
-
             # push!(seqs, seq)
             # push!(refs, ref)
-
             counter += 1
-
-            # if counter % 1_000 == 0
-            #     println(counter)
-            # end
-
-            # break
         end
     end
 
@@ -58,47 +39,21 @@ function get_record(filename)
     close(reader)
 
     return last_record
-    # return flag
-    # return record, flag, cigar, seq, md
-    # return record
-    # return seq, ref
-    # return seqs, refs
-
 end
-
-filename = "smallsmall.bam"
-# record, flag, cigar, seq, md = get_record(filename)
-# seqs, refs = get_record(filename)
-# seq, ref = get_record(filename)
-
-record = get_record(filename)
-
-flag = BAM.flag(record)
-cigar = BAM.cigar(record)
-read = BAM.sequence(record)
-md = record["MD"]::String
-quals = BAM.quality(record)
-
-read = "GCCTGAGAACAAGTGAGAAAGAAACTCATTCCTGTCTTTCAATGAGTGCTTTTGTGCATTTAGGAGAACTAGGCAGCACACATTTAGGGCTGAAAGATGNA"
-cigar = "1S15M1D65M2I18M"
-md = "15^T35A30C7C6G1"
-
-sam2_seq, sam2_ref = readcigarmd2seqref_sam2pairwise(read, cigar, md)
-
 
 function is_integer(s)
     return isa(tryparse(Int, s), Int)
 end
 
 function is_alpha(text)
-    "Faster version of isletter function. Only works for ASCI, not unicode"
+    "Faster version of isletter function. Only works for ASCI, not unicode."
     all(c -> 'a' <= c <= 'z' || 'A' <= c <= 'Z', text)
 end
 
 
 # %%
 
-function readcigarmd2seqref(read, cigar, md, reverse = false)
+function readcigarmd2seqref(read::String, cigar::String, md::String)
 
     ref_seq = ""
     newread = ""
@@ -193,17 +148,47 @@ function readcigarmd2seqref(read, cigar, md, reverse = false)
 
     end
 
-    read = LongDNASeq(read)
-    ref_seq = LongDNASeq(ref_seq)
-
-    if reverse
-        reverse_complement!(read)
-        reverse_complement!(ref_seq)
-        # reverse!(quals)
-    end
-
     return read, ref_seq
 
 end
 
-real_read, real_ref_seq = readcigarmd2seqref(read, cigar, md)
+
+function readcigarmd2seqref(read::LongDNASeq, cigar::String, md::String)
+    return readcigarmd2seqref(convert(String, read), cigar, md)
+end
+
+function compute_reference(read, cigar, md, quals, forward = true)
+
+    seq, ref = readcigarmd2seqref(read, cigar, md)
+
+    seq = LongDNASeq(seq)
+    ref = LongDNASeq(ref)
+
+    if !forward
+        reverse_complement!(seq)
+        reverse_complement!(ref)
+        reverse!(quals)
+    end
+
+    return seq, ref, quals
+
+end
+
+# %%
+
+filename = "smallsmall.bam"
+record = get_record(filename)
+
+
+# flag = BAM.flag(record)
+read = BAM.sequence(record)
+cigar = BAM.cigar(record)
+md = record["MD"]::String
+quals = BAM.quality(record)
+forward = BAM.ispositivestrand(record)
+
+# readcigarmd2seqref_sam2pairwise(read, cigar, md)
+# readcigarmd2seqref(read, cigar, md)
+
+sequence, reference, quality = compute_reference(read, cigar, md, quals, forward)
+
