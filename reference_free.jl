@@ -12,35 +12,6 @@ function readcigarmd2seqref_sam2pairwise(read, cigar, md)
 end
 
 
-function get_record(filename)
-
-    # Open a BAM file.
-    reader = open(BAM.Reader, filename)
-
-    counter = 1
-
-    local last_record
-
-    record = BAM.Record()
-    while !eof(reader)
-        empty!(record)
-        read!(reader, record)
-
-        # `record` is a BAM.Record object.
-        if BAM.ismapped(record)
-            last_record = record
-            # push!(seqs, seq)
-            # push!(refs, ref)
-            counter += 1
-        end
-    end
-
-    println(counter)
-    close(reader)
-
-    return last_record
-end
-
 function is_integer(s)
     return isa(tryparse(Int, s), Int)
 end
@@ -176,19 +147,191 @@ end
 
 # %%
 
-filename = "smallsmall.bam"
-record = get_record(filename)
+
+function record2reference(record::BAM.Record)
+    # flag = BAM.flag(record)
+    read = BAM.sequence(record)
+    cigar = BAM.cigar(record)
+    md = record["MD"]::String
+    quals = BAM.quality(record)
+    forward = BAM.ispositivestrand(record)
+
+    sequence, reference, qualities = compute_reference(read, cigar, md, quals, forward)
+    return sequence, reference, qualities
+end
 
 
-# flag = BAM.flag(record)
-read = BAM.sequence(record)
-cigar = BAM.cigar(record)
-md = record["MD"]::String
-quals = BAM.quality(record)
-forward = BAM.ispositivestrand(record)
+# parameter p in geometric probability distribution of PMD
+const PMDpparam = 0.3
 
-# readcigarmd2seqref_sam2pairwise(read, cigar, md)
-# readcigarmd2seqref(read, cigar, md)
+# constant C in geometric probability distribution of PMD
+const PMDconstant = 0.01
 
-sequence, reference, quality = compute_reference(read, cigar, md, quals, forward)
+# True biological polymorphism between the ancient individual and the reference sequence
+const polymorphism_ancient = 0.001
+
+# True biological polymorphism between the contaminants and the reference sequence
+const polymorphism_contamination = 0.001
+
+
+function phred2prob(Q)
+    q = Q % Int
+    return 10.0^(-q / 10.0)
+end
+
+function phreds2probs(Qs)
+    return phred2prob.(Qs)
+end
+
+function damage_model_modern(z)
+    return 0.001
+end
+
+function damage_model_ancient(z, p = PMDpparam, C = PMDconstant)
+    return Dz = p * (1 - p)^(z - 1) + C
+end
+
+function L_match(z, damage_model, quality, polymorphism)
+    P_damage = damage_model(z)
+    P_error = phred2prob(quality) / 3
+    P_poly = polymorphism
+    P_match =
+        (1.0 - P_damage) * (1.0 - P_error) * (1.0 - P_poly) +
+        (P_damage * P_error * (1.0 - P_poly)) +
+        (P_error * P_poly * (1.0 - P_damage))
+    return P_match
+end
+
+function L_mismatch(z, damage_model, quality, polymorphism)
+    P_match = L_match(z, damage_model, quality, polymorphism)
+    P_mismatch = 1 - P_match
+    return P_mismatch
+end
+
+
+function compute_likelihood_ratio(
+    sequence::LongDNASeq,
+    reference::LongDNASeq,
+    qualities::Vector{UInt8},
+    max_position::Int = -1,
+)::Float64
+
+    if max_position < 1
+        max_position = length(sequence)
+    end
+
+    L_D = 1.0
+    L_M = 1.0
+
+    z = 1
+    for (s, r, q) in zip(sequence, reference, qualities)
+
+        if s == DNA_N | r == DNA_N
+            continue
+        end
+
+        if r == DNA_C
+            if s == DNA_T
+                L_D *= L_mismatch(z, damage_model_ancient, q, polymorphism_ancient)
+                L_M *= L_mismatch(z, damage_model_modern, q, polymorphism_contamination)
+            elseif s == DNA_C
+                L_D *= L_match(z, damage_model_ancient, q, polymorphism_ancient)
+                L_M *= L_match(z, damage_model_modern, q, polymorphism_contamination)
+            end
+
+        elseif r == DNA_G
+
+            if s == DNA_A
+                L_D *= L_mismatch(z, damage_model_ancient, q, polymorphism_ancient)
+                L_M *= L_mismatch(z, damage_model_modern, q, polymorphism_contamination)
+            elseif s == DNA_G
+                L_D *= L_match(z, damage_model_ancient, q, polymorphism_ancient)
+                L_M *= L_match(z, damage_model_modern, q, polymorphism_contamination)
+            end
+        end
+
+        z += 1
+
+        if z > max_position
+            break
+        end
+
+    end
+
+    LR = log(L_D / L_M)
+    return LR
+
+end
+
+function compute_likelihood_ratio(record::BAM.Record, max_position::Int = -1)
+    sequence, reference, qualities = record2reference(record)
+    return compute_likelihood_ratio(sequence, reference, qualities, max_position), sequence
+end
+
+
+# LR, sequence = compute_likelihood_ratio(record)
+
+
+
+function get_record(filename)
+
+    # Open a BAM file.
+    reader = open(BAM.Reader, filename)
+
+    LRs = Float64[]
+    sequences = LongDNASeq[]
+
+    record = BAM.Record()
+    while !eof(reader)
+        empty!(record)
+        read!(reader, record)
+
+        # `record` is a BAM.Record object.
+        if BAM.ismapped(record)
+            LR, sequence = compute_likelihood_ratio(record)
+            push!(LRs, LR)
+            push!(sequences, sequence)
+        end
+    end
+
+    # println(counter)
+    close(reader)
+
+    return sequences, LRs
+end
+
+
+
+do_run = false
+if do_run
+    filename = "smallsmall.bam"
+    sequences, LRs = get_record(filename)
+
+    # serialize/save to file
+    using Serialization
+    serialize("test", (sequences=sequences, LRs=LRs))
+
+else
+    # deserialize
+    using Serialization
+    objects = deserialize("test")
+    for (k, v) in pairs(objects)
+        @eval $k = $v
+    end
+
+end
+
+# save("test.jld", (sequences, LRs))
+
+
+lengths = length.(sequences)
+
+
+using Plots
+gr()
+
+histogram(LRs)
+histogram(lengths)
+histogram2d(lengths, LRs)
+
 
