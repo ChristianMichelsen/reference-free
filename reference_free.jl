@@ -265,15 +265,16 @@ end
 
 function compute_likelihood_ratio(record::BAM.Record, max_position::Int = -1)
     sequence, reference, qualities = record2reference(record)
-    return compute_likelihood_ratio(sequence, reference, qualities, max_position), sequence
+    LR = compute_likelihood_ratio(sequence, reference, qualities, max_position)
+    return LR, sequence
 end
 
 
 # LR, sequence = compute_likelihood_ratio(record)
 
+# sequence, reference, qualities = record2reference(record)
 
-
-function get_record(filename)
+function load_data(filename)
 
     # Open a BAM file.
     reader = open(BAM.Reader, filename)
@@ -301,15 +302,44 @@ function get_record(filename)
 end
 
 
+function load_record(filename)
+    "Load record with many errors"
+
+    # Open a BAM file.
+    reader = open(BAM.Reader, filename)
+
+    record = BAM.Record()
+    while !eof(reader)
+        empty!(record)
+        read!(reader, record)
+
+        # `record` is a BAM.Record object.
+        if BAM.ismapped(record)
+            if length(BAM.cigar(record)) > 10 | length(record["MD"]::String) > 10
+                break
+            end
+        end
+    end
+
+    # println(counter)
+    close(reader)
+
+    return record
+end
+
+#%%
+
+
+filename = "smallsmall.bam"
+
 
 do_run = false
 if do_run
-    filename = "smallsmall.bam"
-    sequences, LRs = get_record(filename)
+    sequences, LRs = load_data(filename)
 
     # serialize/save to file
     using Serialization
-    serialize("test", (sequences=sequences, LRs=LRs))
+    serialize("test", (sequences = sequences, LRs = LRs))
 
 else
     # deserialize
@@ -326,12 +356,37 @@ end
 
 lengths = length.(sequences)
 
+#%%
 
-using Plots
-gr()
+if false
 
-histogram(LRs)
-histogram(lengths)
-histogram2d(lengths, LRs)
+    using Plots
+    gr()
+
+    histogram(LRs)
+    histogram(lengths)
+    histogram2d(lengths, LRs)
+end
+
+# %%
+
+# record = load_record(filename)
+# sequence, reference, qualities = record2reference(record)
+# compute_likelihood_ratio(sequence, reference, qualities)
+# compute_likelihood_ratio(complement(sequence), complement(reference), qualities)
+
+# %%
+
+min_length = minimum(lengths)
+const dna_letters = [DNA_A, DNA_C, DNA_G, DNA_T]
+
+function onehot(sequence)
+    return dna_letters .== permutedims(collect(sequence))
+end
+
+
+# X = [onehot(sequence[1:min_length]) for sequence in sequences];
+
+#%%
 
 
