@@ -3,7 +3,7 @@ include("../utils/Utils.jl")
 using .Utils
 
 
-function readcigarmd2seqref(read::String, cigar::String, md::String)
+function align(read::String, cigar::String, md::String)
 
     ref_seq = ""
     newread = ""
@@ -108,7 +108,7 @@ function readcigarmd2seqref(read::String, cigar::String, md::String)
 end
 
 
-function readcigarmd2seqref(read::LongDNASeq, cigar::String, md::String)
-    return readcigarmd2seqref(convert(String, read), cigar, md)
+function align(read::LongDNASeq, cigar::String, md::String)
+    return align(convert(String, read), cigar, md)
 end
 

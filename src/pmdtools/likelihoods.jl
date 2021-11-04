@@ -5,10 +5,10 @@ const PMDpparam = 0.3
 # constant C in geometric probability distribution of PMD
 const PMDconstant = 0.01
 
-# True biological polymorphism between the ancient individual and the reference sequence
+# True biological polymorphism between the ancient individual and the ref_aligned seq_aligned
 const polymorphism_ancient = 0.001
 
-# True biological polymorphism between the contaminants and the reference sequence
+# True biological polymorphism between the contaminants and the ref_aligned seq_aligned
 const polymorphism_contamination = 0.001
 
 
@@ -48,21 +48,21 @@ end
 
 
 function compute_PMD_score(
-    sequence::LongDNASeq,
-    reference::LongDNASeq,
-    qualities::Vector{UInt8},
+    seq_aligned::LongDNASeq,
+    ref_aligned::LongDNASeq,
+    qual_aligned::Vector{UInt8},
     max_position::Int = -1,
 )::Float64
 
     if max_position < 1
-        max_position = length(sequence)
+        max_position = length(seq_aligned)
     end
 
     L_D = 1.0
     L_M = 1.0
 
     z = 1
-    for (s, r, q) in zip(sequence, reference, qualities)
+    for (s, r, q) in zip(seq_aligned, ref_aligned, qual_aligned)
 
         if s == DNA_N | r == DNA_N
             continue
