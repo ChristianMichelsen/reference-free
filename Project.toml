@@ -5,9 +5,16 @@ version = "0.1.0"
 
 [deps]
 BioSequences = "7e6ae17a-c86d-528c-b3b9-7f778a29fe59"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 NumericIO = "6c575b1c-77cb-5640-a5dc-a54116c90507"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
 XAM = "d759349c-bcba-11e9-07c2-5b90f8f05f7c"
 
 [compat]
