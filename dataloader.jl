@@ -1,21 +1,20 @@
 
-
 using XAM
 using BioSequences
 using ProgressMeter
+using DataFrames
+using Serialization
 # using Serialization
-using GLMakie
-using StatsBase
+# using GLMakie
+# using StatsBase
 
 
 #%%
 
-filename_ancient = "../data/SLVi33.16.hg18.bam"
+filename_ancient = "../data/AltaiNea.hg19_1000g.1.dq.bam"
 filename_modern = "../data/MMS8_HGDP00521_French.paired.qualfilt.rmdup.entropy1.0.sort.bam"
-do_augment_data = false
-# do_augment_data = true
-max_cols = 5
-# max_cols = 20
+# do_augment_data = false
+do_augment_data = true
 
 
 #%%
@@ -111,45 +110,10 @@ labels = [
 
 #%%
 
-using GLM, DataFrames
+df_y = DataFrame(y = labels)
+df_X = DataFrame(permutedims(hcat(collect.(sequences)...)), :auto)
 
+df = hcat(df_y, df_X)
 
-df = hcat(
-    DataFrame(y = labels),
-    DataFrame(permutedims(hcat(collect.(sequences)...))[:, 1:max_cols], :auto),
-)
-
-levels = [DNA_A, DNA_C, DNA_G, DNA_T]
-coding = DummyCoding(levels = levels)
-
-variable_names = names(df, Not(:y))
-
-contrast = Dict(Symbol(name) => coding for name in variable_names)
-
-
-formula = @formula(y ~ 1 + x1 * x2 * x3)
-# formula = term(:y) ~ sum(term.([1; variable_names]))
-
-
-logistic = glm(formula, df, Bernoulli(), LogitLink(); contrasts = contrast)
-# exp.(coef(logistic))
-
-prediction = predict(logistic, df);
-prediction_class = map(x -> Int(x > 0.5), prediction);
-
-
-prediction_df = DataFrame(
-    y_actual = df.y,
-    y_predicted = prediction_class,
-    prob_predicted = prediction,
-    correctly_classified = df.y .== prediction_class,
-);
-# prediction_df.correctly_classified = prediction_df.y_actual .== prediction_df.y_predicted
-
-
-accuracy = mean(prediction_df.correctly_classified)
-println(
-    "Using $(length(variable_names)) variables, the accuracy is ",
-    round(100 * accuracy, digits = 2),
-    "%",
-)
+filename_out = "./df.data"
+serialize(filename_out, (df = df,))
