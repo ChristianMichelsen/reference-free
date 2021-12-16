@@ -1,60 +1,47 @@
-
 using DataFrames
 using Serialization
 using BioSequences
 using MLJ
 using MLJGLMInterface
-
+using StableRNGs
 #%%
+
+include("mlj_functions.jl")
+
 
 filename_out = "./df.data"
-object = deserialize(filename_out);
-df = object.df;
-df.y = Int64.(df.y)
-df = df[!, 1:1+15];
+N_positions = 10
+df = get_data(filename_out; N_positions = N_positions)
 
-X_cols = names(df, Not(:y));
-df[!, X_cols] = string.(df[!, X_cols]);
+X, y = get_X_y(df)
+train, test = partition(eachindex(y), 0.8; shuffle = true, StableRNG(123))
+y_test = y[test]
 
-encoding = autotype(df, :string_to_multiclass)
-df_c = coerce(df, :y => Binary, encoding...)
+# get_matching_models(X, y)
 
-
-X = select(df_c, Not(:y))
-y = df_c.y
-
-#%%
-
-function get_matching_models(df)
-    hot_model = OneHotEncoder()
-    hot = machine(hot_model, X)
-    fit!(hot)
-    Xt = MLJ.transform(hot, X)
-    # models(matching(X, y))
-    # models(matching(Xt, y))
-    models() do model
-        matching(model, Xt, y) && model.prediction_type == :probabilistic #&&
-        # model.is_pure_julia
-    end
-end
-get_matching_models(df_c)
-
-#%%
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                     ██      ██████
+#                     ██      ██   ██
+#                     ██      ██████
+#                     ██      ██   ██
+#                     ███████ ██   ██
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
 LogReg = @load LogisticClassifier pkg = MLJLinearModels
 
 pipe_logreg = @pipeline(
     OneHotEncoder,
-    LogReg(penalty = :none, fit_intercept = true),
-    name = "pipeline_logreg",
+    LogReg(penalty = :none, fit_intercept = false),
+    # name = "pipeline_logreg",
 )
 
 mach_logreg = machine(pipe_logreg, X, y)
-fit!(mach_logreg)
-yhat_logreg = predict(mach_logreg, X)
-acc_logreg = accuracy(predict_mode(mach_logreg, X), y)
+fit!(mach_logreg, rows = train)
+yhat_logreg = predict(mach_logreg, rows = test);
+acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
 println("Accuracy, LogReg, ", round(acc_logreg, digits = 3))
+confusion_matrix(yhat_logreg, y_test)
 
 
 evaluate(
@@ -66,116 +53,79 @@ evaluate(
     verbosity = 0,
 )
 
-function transpose(df::DataFrame)
-    df_T = DataFrame([[names(df)]; collect.(eachrow(df))], [:column; Symbol.(axes(df, 1))])
-end
-
-function get_logreg_dataframe(mach::Machine)
-    params_raw = fitted_params(mach_logreg)
-    params = hcat(
-        DataFrame(intercept = params_raw.logistic_classifier.intercept),
-        DataFrame(params_raw.logistic_classifier.coefs),
-    )
-
-    params_T = rename(transpose(params), :2 => :values)
-    return params_T
-end
-get_logreg_dataframe(mach_logreg)
+df_logreg_long = get_df_logreg_long(mach_logreg);
+df_logreg_wide = get_df_logreg_wide(df_logreg_long)
 
 #%%
-
-
-# evaluate(
-#     pipe_logreg,
-#     X,
-#     y,
-#     resampling = CV(nfolds = 5, shuffle = true, rng = 1234),
-#     measures = [LogLoss(), Accuracy()],
-#     verbosity = 0,
-# )
-
-
-#%%
-
-# GLM
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                      ██████  ██      ███    ███
+#                     ██       ██      ████  ████
+#                     ██   ███ ██      ██ ████ ██
+#                     ██    ██ ██      ██  ██  ██
+#                      ██████  ███████ ██      ██
+# # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
 pipe_GLM = @pipeline(
     OneHotEncoder(drop_last = true),
     x -> table(Matrix(x)),
-    LinearBinaryClassifier(),
-    name = "pipeline_glm",
+    LinearBinaryClassifier(fit_intercept = true),
+    # name = "pipeline_glm",
 )
 
-mach_logregGLM = machine(pipe_GLM, X, y);
-fit!(mach_logregGLM);
+mach_GLM = machine(pipe_GLM, X, y);
+fit!(mach_GLM, rows = train);
+fitresult = get_glm_fitresult(mach_GLM)
+yhat_GLM = predict(mach_GLM, rows = test);
 
-function get_glm_fitresult(mach::Machine)
-    fitresult, decode = mach.fitresult.predict.machine.fitresult
-    return fitresult
-end
-fitresult = get_glm_fitresult(mach_logregGLM)
-yhat_GLM = predict(mach_logregGLM, X);
-
-acc_glm = accuracy(predict_mode(mach_logregGLM, X), y)
+acc_glm = accuracy(predict_mode(mach_GLM, rows = test), y_test)
 println("Accuracy, GLM, ", round(acc_glm, digits = 3))
+confusion_matrix(yhat_GLM, y_test)
 
 
-# confusion_matrix(categorical([1, 1, 0]; ordered=true), categorical([0, 1, 0]; ordered=true))
-
-
-
-
-fitted_params(mach_logregGLM).linear_binary_classifier.coef
-r = report(mach_logregGLM).linear_binary_classifier;
+fitted_params(mach_GLM).linear_binary_classifier.coef
+r = report(mach_GLM).linear_binary_classifier;
 r.stderror
 # r.deviance
 # r.dof_residual
 # r.vcov
 
 
-# pdf.(yhat_logreg, 1)
-
-
-#%%
-
-# XGB
-
-XGB = @load XGBoostClassifier
-pipe_xgb = @pipeline(OneHotEncoder, XGB(), name = "pipeline_xgb",);
-machine_xgb = machine(pipe_xgb, X, y);
-fit!(machine_xgb)
-yhat_xgb = predict(machine_xgb, X);
-# predict_mean(machine_xgb, X)
-acc_xgb = accuracy(predict_mode(machine_xgb, X), y)
-println("Accuracy, XGB, ", round(acc_xgb, digits = 3))
-
-
-
 # LGB
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                     ██       ██████  ██████
+#                     ██      ██       ██   ██
+#                     ██      ██   ███ ██████
+#                     ██      ██    ██ ██   ██
+#                     ███████  ██████  ██████
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 
 LGB = @load LGBMClassifier
+
+lgb = LGB(
+    objective = "binary",
+    num_iterations = 100,
+    learning_rate = 0.1,
+    # early_stopping_round = 5,
+    feature_fraction = 0.8,
+    bagging_fraction = 0.9,
+    bagging_freq = 1,
+    num_leaves = 1000,
+    metric = ["auc", "binary_logloss"],
+);
+
 pipe_lgb = @pipeline(
     OneHotEncoder,
-    LGB(
-        objective = "binary",
-        num_iterations = 100,
-        learning_rate = 0.1,
-        # early_stopping_round = 5,
-        feature_fraction = 0.8,
-        bagging_fraction = 0.9,
-        bagging_freq = 1,
-        num_leaves = 1000,
-        # num_class = 1,
-        metric = ["auc", "binary_logloss"],
-    ),
+    lgb,
     # name = "pipeline_lgb",
 );
-machine_lgb = machine(pipe_lgb, X, y);
-fit!(machine_lgb)
-yhat_lgb = predict(machine_lgb, X);
-acc_lgb = accuracy(predict_mode(machine_lgb, X), y)
+mach_lgb = machine(pipe_lgb, X, y);
+fit!(mach_lgb, rows = train)
+yhat_lgb = predict(mach_lgb, rows = test);
+acc_lgb = accuracy(predict_mode(mach_lgb, rows = test), y_test)
 println("Accuracy, LGB, ", round(acc_lgb, digits = 3))
+confusion_matrix(yhat_lgb, y_test)
 
 
 evaluate(
@@ -185,4 +135,150 @@ evaluate(
     resampling = CV(nfolds = 5, shuffle = true, rng = 1234),
     measures = [LogLoss(), Accuracy()],
     verbosity = 0,
+)
+
+#%% LGB categorical
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                     ██       ██████  ██████   ██████
+#                     ██      ██       ██   ██ ██
+#                     ██      ██   ███ ██████  ██
+#                     ██      ██    ██ ██   ██ ██
+#                     ███████  ██████  ██████   ██████
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+
+# mach_logreg = machine(pipe_logreg, X, y)
+# fit!(mach_logreg, rows=train)
+# yhat_logreg = predict(mach_logreg, rows=test);
+# acc_logreg = accuracy(predict_mode(mach_logreg, rows=test), y_test)
+# println("Accuracy, LogReg, ", round(acc_logreg, digits = 3))
+# confusion_matrix(yhat_logreg, y_test)
+
+
+categorical_columns = collect(1:size(X)[2])
+
+pipe_lgb_int = @pipeline(
+    X -> convert_type(X, Float64),
+    LGB(
+        objective = "binary",
+        num_iterations = 100,
+        learning_rate = 0.1,
+        # early_stopping_round = 5,
+        feature_fraction = 0.8,
+        bagging_fraction = 0.9,
+        bagging_freq = 1,
+        num_leaves = 1000,
+        metric = ["auc", "binary_logloss"],
+        categorical_feature = copy(categorical_columns),
+    ),
+    # yhat -> mode.(yhat)
+    # name = "pipeline_lgb",
+);
+mach_lgb_int = machine(pipe_lgb_int, X, y);
+fit!(mach_lgb_int, rows = train)
+yhat_lgb_int = predict(mach_lgb_int, rows = test);
+
+acc_lgb_int = accuracy(predict_mode(mach_lgb_int, rows = test), y_test);
+println("Accuracy, LGB INT, ", round(acc_lgb_int, digits = 3))
+confusion_matrix(yhat_lgb_int, y_test)
+
+evaluate(
+    pipe_lgb_int,
+    X,
+    y,
+    resampling = CV(nfolds = 5, shuffle = true, rng = 1234),
+    measures = [LogLoss(), Accuracy()],
+    verbosity = 0,
+)
+
+# #%%
+
+# import LightGBM
+
+# indices = [1, 3, 5, 7, 9]
+# classifier = LightGBM.LGBMClassification(categorical_feature = indices)
+# ds_parameters = LightGBM.stringifyparams(classifier; verbosity = -1)
+
+# expected = "categorical_feature=0,2,4,6,8"
+# occursin(expected, ds_parameters)
+
+#%%
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                     ██   ██ ██████   ██████
+#                     ██   ██ ██   ██ ██    ██
+#                     ███████ ██████  ██    ██
+#                     ██   ██ ██      ██    ██
+#                     ██   ██ ██       ██████
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+# atom = LGB(); #initialised a model with default params
+# ensemble = @pipeline(OneHotEncoder, atom);
+# mach = machine(pipe_lgb2, X, y)
+# boostrange = range(ensemble, :(lgbm_classifier.num_iterations), lower=2, upper=500)
+# curve = learning_curve!(mach, resampling=CV(nfolds=5),
+#                         range=boostrange,
+#                         resolution=100,
+#                         measure=LogLoss())
+
+# mach = fit!(machine(OneHotEncoder(), X))
+# Xt = MLJ.transform(mach, X)
+
+
+# lgb = LGB(); #initialised a model with default params
+# lgbm = machine(lgb, Xt, y)
+# boostrange = range(lgb, :num_iterations, lower=2, upper=500)
+# curve = learning_curve!(lgbm, resampling=CV(nfolds=5),
+#                         range=boostrange, resolution=100,
+#                         measure=LogLoss())
+
+
+#%%
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                     ██████   ██████   ██████
+#                     ██   ██ ██    ██ ██
+#                     ██████  ██    ██ ██
+#                     ██   ██ ██    ██ ██
+#                     ██   ██  ██████   ██████
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+using GLMakie
+using CairoMakie
+
+y_hats = (yhat_logreg, yhat_lgb, yhat_lgb_int);
+names_roc = ("Logistic Regression", "LightGBM OneHotEncoding", "LightGBM Categorical")
+f_roc = plot_roc(y_hats, y_test, names_roc)
+
+
+
+
+#%%
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#                     ███████ ██   ██  █████  ██████
+#                     ██      ██   ██ ██   ██ ██   ██
+#                     ███████ ███████ ███████ ██████
+#                          ██ ██   ██ ██   ██ ██
+#                     ███████ ██   ██ ██   ██ ██
+# - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+CairoMakie.activate!()
+
+data_shap_logreg = shap_compute(mach = mach_logreg, X = X[test, :], N = 1_000)
+plot_shap_global(data_shap_logreg, savefig = true, filename = "fig_shap_global_logreg")
+plot_shap_variables(data_shap_logreg, savefig = true, filename = "fig_shap_feature_logreg")
+
+
+data_shap_lgb = shap_compute(mach = mach_lgb, X = X[test, :], N = 1_000)
+plot_shap_global(data_shap_lgb, savefig = true, filename = "fig_shap_global_lgb")
+plot_shap_variables(data_shap_lgb, savefig = true, filename = "fig_shap_feature_lgb")
+
+
+data_shap_lgb_int = shap_compute(mach = mach_lgb_int, X = X[test, :], N = 1_000)
+plot_shap_global(data_shap_lgb_int, savefig = true, filename = "fig_shap_global_lgb_int")
+plot_shap_variables(
+    data_shap_lgb_int,
+    savefig = true,
+    filename = "fig_shap_feature_lgb_int",
 )
