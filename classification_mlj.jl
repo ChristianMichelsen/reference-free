@@ -11,14 +11,15 @@ include("mlj_functions.jl")
 
 filename_out = "./df.data"
 N_positions = 10
-df = get_data(filename_out; N_positions = N_positions)
+k = 1
+df = get_data(filename_out; N_positions = N_positions, k = k)
 
 X, y = get_X_y(df)
-train, test = partition(eachindex(y), 0.8; shuffle = true, StableRNG(123))
+train, test = partition(eachindex(y), 0.8; shuffle = true, rng = StableRNG(123))
 y_test = y[test]
-
 # get_matching_models(X, y)
 
+#%%
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #                     ██      ██████
 #                     ██      ██   ██
@@ -37,7 +38,7 @@ pipe_logreg = @pipeline(
 )
 
 mach_logreg = machine(pipe_logreg, X, y)
-fit!(mach_logreg, rows = train)
+fit!(mach_logreg, rows = train, verbosity = 1)
 yhat_logreg = predict(mach_logreg, rows = test);
 acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
 println("Accuracy, LogReg, ", round(acc_logreg, digits = 3))
@@ -74,7 +75,7 @@ pipe_GLM = @pipeline(
 )
 
 mach_GLM = machine(pipe_GLM, X, y);
-fit!(mach_GLM, rows = train);
+fit!(mach_GLM, rows = train, verbosity = 0);
 fitresult = get_glm_fitresult(mach_GLM)
 yhat_GLM = predict(mach_GLM, rows = test);
 
@@ -121,7 +122,7 @@ pipe_lgb = @pipeline(
     # name = "pipeline_lgb",
 );
 mach_lgb = machine(pipe_lgb, X, y);
-fit!(mach_lgb, rows = train)
+fit!(mach_lgb, rows = train, verbosity = 0)
 yhat_lgb = predict(mach_lgb, rows = test);
 acc_lgb = accuracy(predict_mode(mach_lgb, rows = test), y_test)
 println("Accuracy, LGB, ", round(acc_lgb, digits = 3))
@@ -176,7 +177,7 @@ pipe_lgb_int = @pipeline(
     # name = "pipeline_lgb",
 );
 mach_lgb_int = machine(pipe_lgb_int, X, y);
-fit!(mach_lgb_int, rows = train)
+fit!(mach_lgb_int, rows = train, verbosity = 0)
 yhat_lgb_int = predict(mach_lgb_int, rows = test);
 
 acc_lgb_int = accuracy(predict_mode(mach_lgb_int, rows = test), y_test);
@@ -249,8 +250,6 @@ using CairoMakie
 y_hats = (yhat_logreg, yhat_lgb, yhat_lgb_int);
 names_roc = ("Logistic Regression", "LightGBM OneHotEncoding", "LightGBM Categorical")
 f_roc = plot_roc(y_hats, y_test, names_roc)
-
-
 
 
 #%%

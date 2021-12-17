@@ -4,14 +4,26 @@ using ShapML
 using OrderedCollections
 
 
+function add_kmer!(df; k=2)
+    columns = names(df)
+    k̃ = k-1
+    for i in 2:length(columns)-k̃
+        colname = prod(columns[i:i+k̃])
+        df[:, colname] = [prod(df[j, i:i+k̃]) for j in 1:size(df, 1)]
+    end
+end
 
-function get_data(filename; N_positions = 15)
+
+function get_data(filename; N_positions = 15, k=1)
     object = deserialize(filename_out)
     df = object.df
     df.y = Int64.(df.y)
     df = df[!, 1:1+N_positions]
     X_cols = names(df, Not(:y))
     df[!, X_cols] = string.(df[!, X_cols])
+    if k > 1
+        add_kmer!(df, k=2)
+    end
     return df
 end
 
