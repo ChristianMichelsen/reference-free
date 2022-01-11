@@ -1,28 +1,32 @@
 import MLJBase
-using DataFramesMeta
+import DataFramesMeta
 using ShapML
 using OrderedCollections
+using ProgressMeter
+using ColorSchemes
 
 
-function add_kmer!(df; k=2)
+function add_kmer!(df; k = 2)
     columns = names(df)
-    k̃ = k-1
-    for i in 2:length(columns)-k̃
+    k̃ = k - 1
+    for i = 2:length(columns)-k̃
         colname = prod(columns[i:i+k̃])
-        df[:, colname] = [prod(df[j, i:i+k̃]) for j in 1:size(df, 1)]
+        df[:, colname] = [prod(df[j, i:i+k̃]) for j = 1:size(df, 1)]
     end
 end
 
 
-function get_data(filename; N_positions = 15, k=1)
+function get_data(filename; N_positions = 15, k = 1)
     object = deserialize(filename_out)
     df = object.df
     df.y = Int64.(df.y)
-    df = df[!, 1:1+N_positions]
+    N_cols = size(df, 2)
+    columns = vcat(collect.([1:1+N_positions, N_cols-N_positions+1:N_cols])...)
+    df = df[!, columns]
     X_cols = names(df, Not(:y))
     df[!, X_cols] = string.(df[!, X_cols])
     if k > 1
-        add_kmer!(df, k=2)
+        add_kmer!(df, k = 2)
     end
     return df
 end
@@ -69,7 +73,8 @@ end
 
 
 function get_df_logreg_wide(df::DataFrame)
-    m = permutedims(reshape(df.values, (4, N_positions)))
+    N_rows = Int(size(df, 1) // 4)
+    m = permutedims(reshape(df.values, (4, N_rows)))
     return DataFrame(m, [:A, :C, :G, :T])
 end
 
@@ -90,6 +95,12 @@ end
 
 #%%
 
+function print_performance(eval, model_name)
+    μ = round(eval.measurement[2], sigdigits = 5)
+    per_fold = eval.per_fold[2]
+    σ = round(std(per_fold) / sqrt(length(per_fold)), digits = 5)
+    println("$model_name = $μ ± $σ")
+end;
 
 #%%
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -275,15 +286,15 @@ function plot_shap_global(
     if !savefig
         return f
     else
-        save("$filename.pdf", f)
+        save("./figures/$filename.pdf", f)
     end
 end
 
 
 function plot_shap_variable(data_shap; feature = "x1", xlim = nothing, ylim = nothing)
 
-    data_plot = @chain data_shap begin
-        @rsubset :feature_name == feature
+    data_plot = DataFramesMeta.@chain data_shap begin
+        DataFramesMeta.@rsubset :feature_name == feature
     end
     # data_plot = data_shap[data_shap.feature_name .== "x1", :]
 
@@ -345,11 +356,11 @@ function plot_shap_variables(
 
         files = String[]
         for (feature, fig) in d_figures
-            file = "$(filename)__$feature.pdf"
+            file = "./figures/$(filename)__$feature.pdf"
             save(file, fig)
             push!(files, file)
         end
-        run(`/usr/local/bin/pdftk $files cat output $filename.pdf`)
+        run(`/usr/local/bin/pdftk $files cat output ./figures/$filename.pdf`)
 
         # delete files
         for file in files
@@ -362,3 +373,82 @@ end
 
 
 #current_figure()
+
+#%%
+
+function get_accuracies_pr_base(df)
+
+    seq_length = Int((size(df, 2) - 1) / 2)
+    N_positions_vec = 1:seq_length
+
+    accs_logreg = Float64[]
+    accs_lgb_acc = Float64[]
+
+    p = Progress(sum(N_positions_vec), 1)   # minimum update interval: 1 second
+    position = 0
+    for N_positions in N_positions_vec
+
+        ProgressMeter.update!(p, position)
+        position += N_positions
+
+        X = get_X_y(df)[1]
+        X = hcat(X[:, 1:N_positions], X[:, end-N_positions+1:end])
+
+        mach_logreg = machine(pipe_logreg, X, y)
+        fit!(mach_logreg, rows = train, verbosity = 0)
+        acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
+        push!(accs_logreg, acc_logreg)
+
+        mach_lgb_cat = machine(pipe_lgb_cat, X, y)
+        fit!(mach_lgb_cat, rows = train, verbosity = 0)
+        acc_lgb_cat = accuracy(predict_mode(mach_lgb_cat, rows = test), y_test)
+        push!(accs_lgb_acc, acc_lgb_cat)
+
+
+    end
+
+    accs = [
+        ("N_positions_vec", N_positions_vec),
+        ("Logistic Regression", accs_logreg),
+        ("LightGBM (Cat)", accs_lgb_acc),
+    ];
+
+    return accs
+end
+
+
+function plot_accuracy_function_of_bases(accuracies; ylimits=(nothing, nothing))
+
+    N_positions_vec = accuracies[1][2]
+    seq_length = maximum(N_positions_vec)
+
+    colormap = [x for x in ColorSchemes.Set1_9.colors]
+
+    f = Figure()
+    ax = Axis(
+        f[1, 1],
+        title = "Accuracy as a function of number of bases included (symmetric)",
+        xlabel = "# bases included (symmetric)",
+        ylabel = "Accuracy",
+        # limits = (0.5, seq_length + 0.5, 0.634, 0.701),
+        limits = (0.5, seq_length + 0.5, ylimits...),
+        xticks = 1:2:seq_length,
+        )
+
+
+
+    for (i, acc) in enumerate(accuracies[2:end])
+        scatterlines!(
+            ax,
+            N_positions_vec,
+            acc[2],
+            color = colormap[i],
+            markercolor = colormap[i],
+            label = acc[1],
+            )
+    end
+
+    axislegend(position = :rb)
+    return f
+end
+
