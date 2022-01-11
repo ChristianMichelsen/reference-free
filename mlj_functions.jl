@@ -103,6 +103,44 @@ function print_performance(eval, model_name)
 end;
 
 #%%
+
+
+function plot_LR_fit_coefficients(df)
+
+    max_pos = size(df, 1)
+    positions = 1:max_pos
+    bases = [:A, :C, :G, :T]
+
+
+    f = Figure()
+    ax = Axis(
+        f[1, 1],
+        title = "LR fit coefficients as a function of position",
+        xlabel = "Position",
+        ylabel = "Fit coefficient (LR)",
+        limits = (0.5, max_pos + 0.5, nothing, nothing),
+        # xticks = 1:2:seq_length,
+        )
+
+    colormap = [x for x in ColorSchemes.Set1_9.colors]
+    for (i, base) in enumerate(bases)
+        scatterlines!(
+            ax,
+            positions,
+            df[:, base],
+            color = colormap[i],
+            markercolor = colormap[i],
+            label = String(base),
+            )
+    end
+
+    axislegend(position = :cb, nbanks=4)
+    return f
+end
+
+
+
+#%%
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #                     ██   ██  ██████  ██████
 #                      ██ ██  ██       ██   ██

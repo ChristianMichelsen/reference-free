@@ -79,6 +79,9 @@ end
 
 df_logreg_long = get_df_logreg_long(mach_logreg);
 df_logreg_wide = get_df_logreg_wide(df_logreg_long)
+f_LR_fit_coef = plot_LR_fit_coefficients(df_logreg_wide)
+save("./figures/LR_fit_coefficient.pdf", f_LR_fit_coef)
+
 
 #%%
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -346,7 +349,10 @@ if do_bases_included_accuracy
     # GLMakie.activate!()
     CairoMakie.activate!()
 
-    f = plot_accuracy_function_of_bases(accuracies, ylimits = (0.634, 0.701))
-    save("./figures/accuracies_base_dependent.pdf", f)
+    f_acc = plot_accuracy_function_of_bases(accuracies, ylimits = (0.634, 0.701))
+    save("./figures/accuracies_base_dependent.pdf", f_acc)
 
 end
+
+#%%
+
