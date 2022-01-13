@@ -14,13 +14,13 @@ include("mlj_functions.jl")
 
 #%%
 
-do_GLM = false
-do_lgb_normal = false
-do_evaluate = false
+do_GLM = true
+do_lgb_normal = true
+do_evaluate = true
 do_roc = true
 do_shap = false
-do_bases_included_accuracy = false
-save_figures = false
+do_bases_included_accuracy = true
+save_figures = true
 
 #%%
 
@@ -32,6 +32,7 @@ save_figures = false
 
 filename = "./df.data"
 N_rows = 1_000_000
+# N_rows = -1
 
 X, y = get_Xy(filename, N_rows);
 train, test = partition(eachindex(y), 0.75; shuffle = true, rng = StableRNG(123));
@@ -88,7 +89,7 @@ df_logreg_long = get_df_logreg_long(mach_logreg);
 df_logreg_wide = get_df_logreg_wide(df_logreg_long)
 f_LR_fit_coef = plot_LR_fit_coefficients(df_logreg_wide)
 if save_figures
-    save("./figures/LR_fit_coefficient.pdf", f_LR_fit_coef)
+    save("./figures/LR_fit_coefficient__$(N_rows).pdf", f_LR_fit_coef)
 end
 
 
@@ -297,7 +298,7 @@ if do_roc
     names_roc = ("Logistic Regression", "LightGBM Categorical")
     f_roc = plot_roc(y_hats, y_test, names_roc)
     if save_figures
-        save("./figures/fig_ROC.pdf", f_roc)
+        save("./figures/fig_ROC__$(N_rows).pdf", f_roc)
     end
 
 end
@@ -365,7 +366,7 @@ if do_bases_included_accuracy
     # f_acc = plot_accuracy_function_of_bases(accuracies, ylimits = (0.634, 0.701))
     f_acc = plot_accuracy_function_of_bases(accuracies)
     if save_figures
-        save("./figures/accuracies_base_dependent.pdf", f_acc)
+        save("./figures/accuracies_base_dependent__$(N_rows).pdf", f_acc)
     end
 
 end

@@ -58,7 +58,7 @@ end
 function get_Xy(filename, N_rows = 1000)
 
     df = deserialize(filename).df
-    if N_rows < size(df, 1)
+    if 0 < N_rows && N_rows < size(df, 1)
         sample_rows = sample(1:nrow(df), N_rows, replace = false)
         df = df[sample_rows, :]
     end
