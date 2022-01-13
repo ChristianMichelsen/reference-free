@@ -1,40 +1,33 @@
-
 using XAM
 using BioSequences
 using ProgressMeter
-using DataFrames
-using Serialization
-# using Serialization
-# using GLMakie
-# using StatsBase
+# using ResumableFunctions
 
+filename = "../data/AltaiNea.hg19_1000g.1.dq.bam"
+# filename = "Mez-subsampled.bam"
+# filename = "SLMez1.hg18.bam"
 
-#%%
+get_record_channel(filename) =
+    Channel(ctype = BAM.Record) do c
 
-filename_ancient = "../data/AltaiNea.hg19_1000g.1.dq.bam"
-filename_modern = "../data/MMS8_HGDP00521_French.paired.qualfilt.rmdup.entropy1.0.sort.bam"
-# do_augment_data = false
-do_augment_data = true
+        reader = open(BAM.Reader, filename)
+        record = BAM.Record()
+        while !eof(reader)
+            empty!(record)
+            read!(reader, record)
+            put!(c, copy(record))
+        end
+        close(reader)
+    end
+records = Iterators.take(get_record_channel(filename), 10) |> collect;
+record = records[1]
+BAM.refname(record)
 
-
-#%%
-
-# function get_seq_lengths(filename)
-#     reader = open(BAM.Reader, filename)
-#     progress = ProgressUnknown("Getting sequence lengths for $filename:", spinner = true)
-#     Ls = Int64[]
-#     record = BAM.Record()
+# @resumable function get_record_yield(filename)::BAM.Record
 #     while !eof(reader)
-#         empty!(record)
-#         read!(reader, record)
-#         ProgressMeter.next!(progress)
-#         push!(Ls, BAM.seqlength(record))
+#         @yield record
 #     end
-#     ProgressMeter.finish!(progress)
-#     close(reader)
-#     return Ls
 # end
-# # Ls = get_seq_lengths(filename_ancient)
 
 
 function is_reverse(record::BAM.Record)::Bool
@@ -115,47 +108,19 @@ function get_sequences(
 
     end
 
-    ProgressMeter.finish!(progress)
     close(reader)
+    ProgressMeter.finish!(progress)
 
     return sequences
 end
 
-seqs_ancient = get_sequences(filename_ancient; chromosome = "1")
-seqs_modern = get_sequences(
-    filename_modern;
-    chromosome = "chr1",
-    max_sequences = length(seqs_ancient),
-)
+sequences = get_sequences(filename; get_forward_sequence = true, max_sequences = 10_000);
+length(sequences)
+sequences = get_sequences(
+    filename;
+    get_forward_sequence = true,
+    # max_sequences = 10_000,
+    # chromosome = "chr1",
+);
+sequence = sequences[1]
 
-if do_augment_data
-    seqs_ancient = [seqs_ancient; reverse_complement.(seqs_ancient)]
-    seqs_modern = [seqs_modern; reverse_complement.(seqs_modern)]
-end
-
-sequences = [seqs_ancient; seqs_modern]
-labels = [
-    ones(Int8, length(seqs_ancient))
-    zeros(Int8, length(seqs_modern))
-]
-
-
-# hist(
-#     Ls,
-#     bins = 50,
-#     color = :red,
-#     strokewidth = 1,
-#     strokecolor = :black,
-#     normalization = :pdf,
-# )
-
-
-#%%
-
-df_y = DataFrame(y = labels)
-df_X = DataFrame(permutedims(hcat(collect.(sequences)...)), :auto)
-
-df = hcat(df_y, df_X)
-
-filename_out = "./df.data"
-serialize(filename_out, (df = df,))

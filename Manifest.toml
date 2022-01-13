@@ -1214,6 +1214,12 @@ git-tree-sha1 = "8f82019e525f4d5c669692772a6f4b0a58b06a6a"
 uuid = "ae029012-a4dd-5104-9daa-d747884805df"
 version = "1.2.0"
 
+[[deps.ResumableFunctions]]
+deps = ["MacroTools"]
+git-tree-sha1 = "b198ee5bb6762423d3c61caacbdd43e640be265a"
+uuid = "c5292f4c-5179-55e1-98c5-05642aab7184"
+version = "0.6.1"
+
 [[deps.Rmath]]
 deps = ["Random", "Rmath_jll"]
 git-tree-sha1 = "bf3188feca147ce108c76ad82c2792c57abe7b1f"

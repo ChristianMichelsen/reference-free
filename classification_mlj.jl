@@ -4,34 +4,41 @@ using BioSequences
 using MLJ
 using MLJGLMInterface
 using StableRNGs
-using CSV
+using StatsBase: sample
+# using CSV
 
 #%%
 
 include("mlj_functions.jl")
+# include("mlj_types_test.jl")
 
 #%%
 
 do_GLM = false
-do_evaluate = true
-do_roc = false
+do_lgb_normal = false
+do_evaluate = false
+do_roc = true
 do_shap = false
 do_bases_included_accuracy = false
+save_figures = false
 
 #%%
 
+# x = x
 
-filename_csv = "df__N_reads__100000.csv"
 
-df = DataFrame(CSV.File(filename_csv, drop = [1]));
-# filename_out = "./df.data"
-# df = get_data(filename_out; N_positions = N_positions, k = k)
+# filename_csv = "df__N_reads__100000.csv"
+# df = DataFrame(CSV.File(filename_csv, drop = [1]));
 
-X, y = get_X_y(df);
-train, test = partition(eachindex(y), 0.75; shuffle = true, rng = StableRNG(123))
-y_test = y[test]
+filename = "./df.data"
+N_rows = 1_000_000
 
-x = x
+X, y = get_Xy(filename, N_rows);
+train, test = partition(eachindex(y), 0.75; shuffle = true, rng = StableRNG(123));
+y_test = y[test];
+
+
+# x = x
 
 
 #%%
@@ -60,7 +67,7 @@ mach_logreg = machine(pipe_logreg, X, y)
 fit!(mach_logreg, rows = train, verbosity = 0)
 yhat_logreg = predict(mach_logreg, rows = test);
 acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
-println("Accuracy, LogReg, ", round(acc_logreg, digits = 3))
+println("Accuracy, LogReg, ", round(acc_logreg * 100, digits = 2), "%")
 confusion_matrix(yhat_logreg, y_test)
 
 if do_evaluate
@@ -80,7 +87,9 @@ end
 df_logreg_long = get_df_logreg_long(mach_logreg);
 df_logreg_wide = get_df_logreg_wide(df_logreg_long)
 f_LR_fit_coef = plot_LR_fit_coefficients(df_logreg_wide)
-save("./figures/LR_fit_coefficient.pdf", f_LR_fit_coef)
+if save_figures
+    save("./figures/LR_fit_coefficient.pdf", f_LR_fit_coef)
+end
 
 
 #%%
@@ -133,43 +142,44 @@ end
 
 LGB = @load LGBMClassifier verbosity = 0
 
-lgb = LGB(
-    objective = "binary",
-    num_iterations = 100,
-    learning_rate = 0.1,
-    # early_stopping_round = 5,
-    feature_fraction = 0.8,
-    bagging_fraction = 0.9,
-    bagging_freq = 1,
-    num_leaves = 1000,
-    metric = ["auc", "binary_logloss"],
-);
+if do_lgb_normal
 
-pipe_lgb = @pipeline(
-    OneHotEncoder,
-    lgb,
-    # name = "pipeline_lgb",
-);
-mach_lgb = machine(pipe_lgb, X, y);
-fit!(mach_lgb, rows = train, verbosity = 0)
-yhat_lgb = predict(mach_lgb, rows = test);
-acc_lgb = accuracy(predict_mode(mach_lgb, rows = test), y_test)
-println("Accuracy, LGB, ", round(acc_lgb, digits = 3))
-confusion_matrix(yhat_lgb, y_test)
-
-if do_evaluate
-    eval_lgb = evaluate(
-        pipe_lgb,
-        X,
-        y,
-        resampling = CV(nfolds = 5, shuffle = true, rng = 1234),
-        measures = [LogLoss(), Accuracy()],
-        verbosity = 0,
+    pipe_lgb_normal = @pipeline(
+        OneHotEncoder,
+        LGB(
+            objective = "binary",
+            num_iterations = 100,
+            learning_rate = 0.1,
+            feature_fraction = 0.8,
+            bagging_fraction = 0.9,
+            bagging_freq = 1,
+            num_leaves = 1000,
+            metric = ["auc", "binary_logloss"],
+        ),
+        # name = "pipeline_lgb_normal",
     )
 
-    print_performance(eval_lgb, "LightGBM")
-end
+    mach_lgb_normal = machine(pipe_lgb_normal, X, y)
+    fit!(mach_lgb_normal, rows = train, verbosity = 0)
+    yhat_lgb_normal = predict(mach_lgb_normal, rows = test)
+    acc_lgb_normal = accuracy(predict_mode(mach_lgb_normal, rows = test), y_test)
+    println("Accuracy, LGB normal, ", round(acc_lgb_normal, digits = 3))
+    confusion_matrix(yhat_lgb_normal, y_test)
 
+    if do_evaluate
+        eval_lgb_normal = evaluate(
+            pipe_lgb_normal,
+            X,
+            y,
+            resampling = CV(nfolds = 5, shuffle = true, rng = 1234),
+            measures = [LogLoss(), Accuracy()],
+            verbosity = 0,
+        )
+
+        print_performance(eval_lgb_normal, "LightGBM")
+    end
+
+end
 
 #%% LGB categorical
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -185,12 +195,11 @@ end
 categorical_columns = collect(1:size(X)[2]);
 
 pipe_lgb_cat = @pipeline(
-    X -> convert_type(X, Float64),
+    x -> convert_type(x, Float64),
     LGB(
         objective = "binary",
         num_iterations = 100,
         learning_rate = 0.1,
-        # early_stopping_round = 5,
         feature_fraction = 0.8,
         bagging_fraction = 0.9,
         bagging_freq = 1,
@@ -223,6 +232,11 @@ if do_evaluate
     print_performance(eval_lgb_cat, "LightGBM Categorical")
 
 end
+
+
+#%%
+
+# x = x
 
 # #%%
 
@@ -277,15 +291,14 @@ end
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
-using GLMakie
-using CairoMakie
-
 if do_roc
 
-    y_hats = (yhat_logreg, yhat_lgb, yhat_lgb_cat)
-    names_roc = ("Logistic Regression", "LightGBM OneHotEncoding", "LightGBM Categorical")
+    y_hats = (yhat_logreg, yhat_lgb_cat)
+    names_roc = ("Logistic Regression", "LightGBM Categorical")
     f_roc = plot_roc(y_hats, y_test, names_roc)
-    save("./figures/fig_ROC.pdf", f_roc)
+    if save_figures
+        save("./figures/fig_ROC.pdf", f_roc)
+    end
 
 end
 
@@ -308,7 +321,7 @@ if do_shap
     plot_shap_global(data_shap_logreg, savefig = true, filename = "fig_shap_global_logreg")
     plot_shap_variables(
         data_shap_logreg,
-        savefig = true,
+        savefig = save_figures,
         filename = "fig_shap_feature_logreg",
     )
 
@@ -321,12 +334,12 @@ if do_shap
     data_shap_lgb_cat = shap_compute(mach = mach_lgb_cat, X = X[test, :], N = 100)
     plot_shap_global(
         data_shap_lgb_cat,
-        savefig = true,
+        savefig = save_figures,
         filename = "fig_shap_global_lgb_cat",
     )
     plot_shap_variables(
         data_shap_lgb_cat,
-        savefig = true,
+        savefig = save_figures,
         filename = "fig_shap_feature_lgb_cat",
     )
 
@@ -344,15 +357,19 @@ end
 
 if do_bases_included_accuracy
 
-    accuracies = get_accuracies_pr_base(df)
+    accuracies = get_accuracies_pr_base(X)
 
     # GLMakie.activate!()
     CairoMakie.activate!()
 
-    f_acc = plot_accuracy_function_of_bases(accuracies, ylimits = (0.634, 0.701))
-    save("./figures/accuracies_base_dependent.pdf", f_acc)
+    # f_acc = plot_accuracy_function_of_bases(accuracies, ylimits = (0.634, 0.701))
+    f_acc = plot_accuracy_function_of_bases(accuracies)
+    if save_figures
+        save("./figures/accuracies_base_dependent.pdf", f_acc)
+    end
 
 end
 
 #%%
+
 

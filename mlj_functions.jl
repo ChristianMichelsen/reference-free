@@ -1,42 +1,70 @@
 import MLJBase
+using DataFrames
 import DataFramesMeta
+using BioSequences
 using ShapML
 using OrderedCollections
 using ProgressMeter
 using ColorSchemes
+using GLMakie
+using CairoMakie
+using CategoricalArrays
+using MLJ
 
 
-function add_kmer!(df; k = 2)
-    columns = names(df)
-    k̃ = k - 1
-    for i = 2:length(columns)-k̃
-        colname = prod(columns[i:i+k̃])
-        df[:, colname] = [prod(df[j, i:i+k̃]) for j = 1:size(df, 1)]
+d_base2int = Dict(
+    # DNA_N => 0,
+    DNA_A => 1,
+    DNA_C => 2,
+    DNA_G => 3,
+    DNA_T => 4,
+)
+# d_int2base = Dict(i => base for (i, base) in d_base2int)
+all_bases = sort(collect(keys(d_base2int)))
+base_levels = Int8.(sort(collect(values(d_base2int))))
+
+function convert_DNA_to_int(bases, datatype = Int8)
+    bases_int = zeros(datatype, length(bases))
+    for (i, base) in enumerate(bases)
+        bases_int[i] = d_base2int[base]
     end
+    return bases_int
 end
 
+function convert_DNAs_to_categorical(bases, datatype = Int8)
+    bases_int = convert_DNA_to_int(bases)
+    return CategoricalArray{datatype,1,UInt8}(bases_int, levels = base_levels)
+end
 
-function get_data(filename; N_positions = 15, k = 1)
-    object = deserialize(filename_out)
-    df = object.df
-    df.y = Int64.(df.y)
-    N_cols = size(df, 2)
-    columns = vcat(collect.([1:1+N_positions, N_cols-N_positions+1:N_cols])...)
-    df = df[!, columns]
-    X_cols = names(df, Not(:y))
-    df[!, X_cols] = string.(df[!, X_cols])
-    if k > 1
-        add_kmer!(df, k = 2)
+function convert_DNA_dataframe_to_categorical(df)
+    df = copy(df)
+    for column in names(df)
+        df[!, column] = convert_DNAs_to_categorical(df[!, column])
     end
     return df
 end
 
+# function bases2dataframe(bases, prefix)
+#     ohe = all_bases .== permutedims(bases)
+#     base_names = string.(Char.(all_bases))
+#     column_names = [Symbol("$(prefix)_$(base)") for base in base_names]
+#     return DataFrame(table(permutedims(ohe); names = column_names))
+# end
 
-function get_X_y(df)
-    encoding = autotype(df, :string_to_multiclass)
-    df_c = coerce(df, :y => Binary, encoding...)
-    X = select(df_c, Not(:y))
-    y = df_c.y
+# function dataframe2ohe(df)
+#     hcat([bases2dataframe(df[!, column], column) for column in names(df)]...)
+# end
+
+function get_Xy(filename, N_rows = 1000)
+
+    df = deserialize(filename).df
+    if N_rows < size(df, 1)
+        sample_rows = sample(1:nrow(df), N_rows, replace = false)
+        df = df[sample_rows, :]
+    end
+
+    X = convert_DNA_dataframe_to_categorical(select(df, Not(:y)))
+    y = CategoricalArray{Int8,1,Int8}(df.y)
     return X, y
 end
 
@@ -414,13 +442,18 @@ end
 
 #%%
 
-function get_accuracies_pr_base(df)
+import Random.seed!;
 
-    seq_length = Int((size(df, 2) - 1) / 2)
+
+function get_accuracies_pr_base(X)
+
+    seq_length = Int((size(X, 2)) / 2)
     N_positions_vec = 1:seq_length
 
     accs_logreg = Float64[]
     accs_lgb_acc = Float64[]
+
+    X_org = copy(X)
 
     p = Progress(sum(N_positions_vec), 1)   # minimum update interval: 1 second
     position = 0
@@ -429,14 +462,15 @@ function get_accuracies_pr_base(df)
         ProgressMeter.update!(p, position)
         position += N_positions
 
-        X = get_X_y(df)[1]
-        X = hcat(X[:, 1:N_positions], X[:, end-N_positions+1:end])
+        X = hcat(X_org[:, 1:N_positions], X_org[:, end-N_positions+1:end])
 
+        seed!(42);
         mach_logreg = machine(pipe_logreg, X, y)
         fit!(mach_logreg, rows = train, verbosity = 0)
         acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
         push!(accs_logreg, acc_logreg)
 
+        seed!(42);
         mach_lgb_cat = machine(pipe_lgb_cat, X, y)
         fit!(mach_lgb_cat, rows = train, verbosity = 0)
         acc_lgb_cat = accuracy(predict_mode(mach_lgb_cat, rows = test), y_test)
