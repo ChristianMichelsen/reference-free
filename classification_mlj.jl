@@ -22,6 +22,14 @@ do_shap = false
 do_bases_included_accuracy = true
 save_figures = true
 
+# do_GLM = false
+# do_lgb_normal = false
+# do_evaluate = false
+# do_roc = false
+# do_shap = false
+# do_bases_included_accuracy = false
+# save_figures = false
+
 #%%
 
 # x = x
@@ -31,7 +39,8 @@ save_figures = true
 # df = DataFrame(CSV.File(filename_csv, drop = [1]));
 
 filename = "./df.data"
-N_rows = 1_000_000
+N_rows = 2_000_000
+# N_rows = 1_000
 # N_rows = -1
 
 X, y = get_Xy(filename, N_rows);
@@ -61,7 +70,7 @@ LogReg = @load LogisticClassifier pkg = MLJLinearModels
 pipe_logreg = @pipeline(
     OneHotEncoder,
     LogReg(penalty = :none, fit_intercept = false),
-    # name = "pipeline_logreg",
+    name = "pipeline_logreg",
 )
 
 mach_logreg = machine(pipe_logreg, X, y)
@@ -70,6 +79,13 @@ yhat_logreg = predict(mach_logreg, rows = test);
 acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
 println("Accuracy, LogReg, ", round(acc_logreg * 100, digits = 2), "%")
 confusion_matrix(yhat_logreg, y_test)
+
+MLJ.save("mach_logreg__$(N_rows).jlso", mach_logreg)
+
+# mach2 = machine("mach_logreg__$(N_rows).jlso")
+# predict(mach2, X)
+# predict(mach2, rows = test)
+
 
 if do_evaluate
     eval_logreg = evaluate(
@@ -109,7 +125,7 @@ if do_GLM
         OneHotEncoder(drop_last = true),
         x -> table(Matrix(x)),
         LinearBinaryClassifier(fit_intercept = true),
-        # name = "pipeline_glm",
+        name = "pipeline_glm",
     )
 
     mach_GLM = machine(pipe_GLM, X, y)
@@ -121,6 +137,7 @@ if do_GLM
     println("Accuracy, GLM, ", round(acc_glm, digits = 3))
     confusion_matrix(yhat_GLM, y_test)
 
+    MLJ.save("mach_GLM__$(N_rows).jlso", mach_GLM)
 
     fitted_params(mach_GLM).linear_binary_classifier.coef
     r = report(mach_GLM).linear_binary_classifier
@@ -157,7 +174,7 @@ if do_lgb_normal
             num_leaves = 1000,
             metric = ["auc", "binary_logloss"],
         ),
-        # name = "pipeline_lgb_normal",
+        name = "pipeline_lgb_normal",
     )
 
     mach_lgb_normal = machine(pipe_lgb_normal, X, y)
@@ -166,6 +183,9 @@ if do_lgb_normal
     acc_lgb_normal = accuracy(predict_mode(mach_lgb_normal, rows = test), y_test)
     println("Accuracy, LGB normal, ", round(acc_lgb_normal, digits = 3))
     confusion_matrix(yhat_lgb_normal, y_test)
+
+    MLJ.save("mach_lgb_normal__$(N_rows).jlso", mach_lgb_normal)
+
 
     if do_evaluate
         eval_lgb_normal = evaluate(
@@ -209,7 +229,7 @@ pipe_lgb_cat = @pipeline(
         categorical_feature = copy(categorical_columns),
     ),
     # yhat -> mode.(yhat)
-    # name = "pipeline_lgb",
+    name = "pipeline_lgb",
 );
 mach_lgb_cat = machine(pipe_lgb_cat, X, y);
 fit!(mach_lgb_cat, rows = train, verbosity = 0)
@@ -218,6 +238,9 @@ yhat_lgb_cat = predict(mach_lgb_cat, rows = test);
 acc_lgb_cat = accuracy(predict_mode(mach_lgb_cat, rows = test), y_test);
 println("Accuracy, LGB Cat, ", round(acc_lgb_cat, digits = 3))
 confusion_matrix(yhat_lgb_cat, y_test)
+
+MLJ.save("mach_lgb_cat__$(N_rows).jlso", mach_lgb_cat)
+
 
 if do_evaluate
 
