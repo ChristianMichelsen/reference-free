@@ -38,7 +38,7 @@ save_figures = false
 # filename_csv = "df__N_reads__100000.csv"
 # df = DataFrame(CSV.File(filename_csv, drop = [1]));
 
-filename = "./df.data"
+filename = "./data/df.data"
 N_rows = 1_000_000
 # N_rows = 1_000
 # N_rows = -1
@@ -50,8 +50,6 @@ y_test = y[test];
 println("Signal proportion, base-stratified")
 get_base_stratified_signal_proportion(X[test, :], y_test, mean, Float64)
 get_base_stratified_signal_proportion(X[test, :], y_test, sum, Int64)
-
-
 
 
 # x = x
@@ -86,7 +84,7 @@ acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
 println("Accuracy, LogReg, ", round(acc_logreg * 100, digits = 2), "%")
 confusion_matrix(yhat_logreg, y_test)
 
-MLJ.save("mach_logreg__$(N_rows).jlso", mach_logreg)
+MLJ.save("./data/mach_logreg__$(N_rows).jlso", mach_logreg)
 
 # mach2 = machine("mach_logreg__$(N_rows).jlso")
 # predict(mach2, X)
@@ -152,7 +150,7 @@ if do_GLM
     println("Accuracy, GLM, ", round(acc_glm, digits = 3))
     confusion_matrix(yhat_GLM, y_test)
 
-    MLJ.save("mach_GLM__$(N_rows).jlso", mach_GLM)
+    MLJ.save("./data/mach_GLM__$(N_rows).jlso", mach_GLM)
 
     fitted_params(mach_GLM).linear_binary_classifier.coef
     r = report(mach_GLM).linear_binary_classifier
@@ -199,7 +197,7 @@ if do_lgb_normal
     println("Accuracy, LGB normal, ", round(acc_lgb_normal, digits = 3))
     confusion_matrix(yhat_lgb_normal, y_test)
 
-    MLJ.save("mach_lgb_normal__$(N_rows).jlso", mach_lgb_normal)
+    MLJ.save("./data/mach_lgb_normal__$(N_rows).jlso", mach_lgb_normal)
 
 
     if do_evaluate
@@ -254,7 +252,7 @@ acc_lgb_cat = accuracy(predict_mode(mach_lgb_cat, rows = test), y_test);
 println("Accuracy, LGB Cat, ", round(acc_lgb_cat, digits = 3))
 confusion_matrix(yhat_lgb_cat, y_test)
 
-MLJ.save("mach_lgb_cat__$(N_rows).jlso", mach_lgb_cat)
+MLJ.save("./data/mach_lgb_cat__$(N_rows).jlso", mach_lgb_cat)
 
 f_density_scores_lgb_cat =
     plot_density_scores(yhat_lgb_cat, y_test, "Density of scores for LGB Cat")
@@ -406,24 +404,26 @@ end
 
 if do_bases_included_accuracy
 
-    accuracies = get_accuracies_pr_base(X)
-
     # GLMakie.activate!()
     CairoMakie.activate!()
-
-    # f_acc = plot_accuracy_function_of_bases(accuracies, ylimits = (0.634, 0.701))
+    accuracies = get_accuracies_pr_base(X)
     f_acc = plot_accuracy_function_of_bases(accuracies)
     if save_figures
         save("./figures/accuracies_base_dependent__$(N_rows).pdf", f_acc)
     end
 
-
     accuracies_centered = get_accuracies_pr_base_centered(X)
-
     f_acc_centered = plot_accuracy_function_of_bases_centered(accuracies_centered)
     if save_figures
         save("./figures/accuracies_base_dependent_centered__$(N_rows).pdf", f_acc_centered)
     end
+
+    serialize(
+        "./data/accuracies__$(N_rows).data",
+        (accuracies = accuracies, accuracies_centered = accuracies_centered),
+    )
+
+
     #%%
 
 end
