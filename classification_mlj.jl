@@ -417,10 +417,17 @@ if do_bases_included_accuracy
         save("./figures/accuracies_base_dependent__$(N_rows).pdf", f_acc)
     end
 
+
+    accuracies_centered = get_accuracies_pr_base_centered(X)
+
+    f_acc_centered = plot_accuracy_function_of_bases_centered(accuracies_centered)
+    if save_figures
+        save("./figures/accuracies_base_dependent_centered__$(N_rows).pdf", f_acc_centered)
+    end
+    #%%
+
 end
 
 #%%
-
-accuracies = get_accuracies_pr_base_centered(X)
 
 

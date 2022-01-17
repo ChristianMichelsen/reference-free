@@ -511,17 +511,17 @@ function get_accuracies_pr_base_centered(X)
         ProgressMeter.update!(p, position)
         position += N_positions
 
-        middle_idxs = half_seq_length-N_positions:half_seq_length+N_positions
-        X = X_org[:, middle_idxs]
+        middle_idxs = half_seq_length-N_positions:half_seq_length+N_positions+1
+        middle_X = X_org[:, middle_idxs]
 
         seed!(42);
-        mach_logreg = machine(pipe_logreg, X, y)
+        mach_logreg = machine(pipe_logreg, middle_X, y)
         fit!(mach_logreg, rows = train, verbosity = 0)
         acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
         push!(accs_logreg, acc_logreg)
 
         seed!(42);
-        mach_lgb_cat = machine(pipe_lgb_cat, X, y)
+        mach_lgb_cat = machine(pipe_lgb_cat, middle_X, y)
         fit!(mach_lgb_cat, rows = train, verbosity = 0)
         acc_lgb_cat = accuracy(predict_mode(mach_lgb_cat, rows = test), y_test)
         push!(accs_lgb_acc, acc_lgb_cat)
@@ -574,6 +574,43 @@ function plot_accuracy_function_of_bases(accuracies; ylimits=(nothing, nothing))
     axislegend(position = :rb)
     return f
 end
+
+
+function plot_accuracy_function_of_bases_centered(accuracies; ylimits=(nothing, nothing))
+
+    N_positions_vec = accuracies[1][2] .+ 1
+    half_seq_length = maximum(N_positions_vec)
+
+    colormap = [x for x in ColorSchemes.Set1_9.colors]
+
+    f = Figure()
+    ax = Axis(
+        f[1, 1],
+        title = "Accuracy as a function of number of bases included (centered)",
+        xlabel = "# bases included (centered)",
+        ylabel = "Accuracy",
+        # limits = (0.5, half_seq_length + 0.5, 0.634, 0.701),
+        limits = (0.5, half_seq_length + 0.5, ylimits...),
+        xticks = 1:2:half_seq_length,
+        )
+
+
+
+    for (i, acc) in enumerate(accuracies[2:end])
+        scatterlines!(
+            ax,
+            N_positions_vec,
+            acc[2],
+            color = colormap[i],
+            markercolor = colormap[i],
+            label = acc[1],
+            )
+    end
+
+    axislegend(position = :rb)
+    return f
+end
+
 
 
 
