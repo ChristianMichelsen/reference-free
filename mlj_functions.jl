@@ -10,6 +10,9 @@ using GLMakie
 using CairoMakie
 using CategoricalArrays
 using MLJ
+using NamedArrays
+using Statistics
+
 
 
 d_base2int = Dict(
@@ -244,7 +247,9 @@ function plot_roc(y_hats, y, names_roc)
     ax = Axis(f[1, 1], xlabel = "FPR", ylabel = "TPR", title = "ROC Curve")
     for (y_hat, name) in zip(y_hats, names_roc)
         fprs, tprs, ts = roc_curve(y_hat, y)
-        lines!(ax, fprs, tprs, label = name)
+        auc_ = round(100*area_under_curve(y_hat, y), digits=1)
+        legend_name = "$(name), AUC: $(auc_)%"
+        lines!(ax, fprs, tprs, label = legend_name)
     end
     axislegend(ax, position = :rb)
     f
@@ -447,8 +452,8 @@ import Random.seed!;
 
 function get_accuracies_pr_base(X)
 
-    seq_length = Int((size(X, 2)) / 2)
-    N_positions_vec = 1:seq_length
+    half_seq_length = Int((size(X, 2)) / 2)
+    N_positions_vec = 1:half_seq_length
 
     accs_logreg = Float64[]
     accs_lgb_acc = Float64[]
@@ -488,6 +493,52 @@ function get_accuracies_pr_base(X)
     return accs
 end
 
+function get_accuracies_pr_base_centered(X)
+
+
+    half_seq_length = Int((size(X, 2))/2)
+    N_positions_vec = 0:half_seq_length-1
+
+    accs_logreg = Float64[]
+    accs_lgb_acc = Float64[]
+
+    X_org = copy(X)
+
+    p = Progress(sum(N_positions_vec), 1)   # minimum update interval: 1 second
+    position = 0
+    for N_positions in N_positions_vec
+
+        ProgressMeter.update!(p, position)
+        position += N_positions
+
+        middle_idxs = half_seq_length-N_positions:half_seq_length+N_positions
+        X = X_org[:, middle_idxs]
+
+        seed!(42);
+        mach_logreg = machine(pipe_logreg, X, y)
+        fit!(mach_logreg, rows = train, verbosity = 0)
+        acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
+        push!(accs_logreg, acc_logreg)
+
+        seed!(42);
+        mach_lgb_cat = machine(pipe_lgb_cat, X, y)
+        fit!(mach_lgb_cat, rows = train, verbosity = 0)
+        acc_lgb_cat = accuracy(predict_mode(mach_lgb_cat, rows = test), y_test)
+        push!(accs_lgb_acc, acc_lgb_cat)
+
+    end
+
+    accs = [
+        ("N_positions_vec", N_positions_vec),
+        ("Logistic Regression", accs_logreg),
+        ("LightGBM (Cat)", accs_lgb_acc),
+    ];
+
+    return accs
+end
+
+
+
 
 function plot_accuracy_function_of_bases(accuracies; ylimits=(nothing, nothing))
 
@@ -524,3 +575,109 @@ function plot_accuracy_function_of_bases(accuracies; ylimits=(nothing, nothing))
     return f
 end
 
+
+
+
+#%%
+
+
+function get_scores(yhat, label = 1)
+    return pdf.(yhat, Int8(label))
+end
+
+function plot_density_scores(yhat, y_test, title="")
+
+    yscores = get_scores(yhat)
+
+    mask_signal = (y_test .== 1)
+    mask_background = .!mask_signal
+    yscores_signal = yscores[mask_signal]
+    yscores_background = yscores[mask_background]
+
+    f = Figure()
+    ax = Axis(
+        f[1, 1],
+        title = title,
+        xlabel = "Score",
+        ylabel = "Density",
+        limits = (0, 1, 0, nothing),
+    )
+
+    density!(
+        ax,
+        yscores_signal,
+        color = (:red, 0.1),
+        strokecolor = :red,
+        strokewidth = 3,
+        strokearound = false,
+        label = "Signal",
+    )
+    density!(
+        ax,
+        yscores_background,
+        color = (:blue, 0.1),
+        strokecolor = :blue,
+        strokewidth = 3,
+        strokearound = false,
+        label = "Background",
+    )
+    axislegend(position = :lt, nbanks = 4)
+
+    return f
+end
+
+
+#%%
+
+
+function tostring(base::DNA)
+    return string(Char(base))
+end
+
+function get_firstbase_lastbase_mask(X, firstbase, lastbase)
+    return (X[:, 1] .== d_base2int[firstbase]) .&& (X[:, end] .== d_base2int[lastbase])
+end
+
+
+function get_base_stratified_measure(X, yhat, y_test, measure_func=area_under_curve)
+
+    # acc_table["A", "C"]
+    # acc_table["Base 1" => "A", "Base 76" => "C"]
+
+    base_stratified_measure = Float64[]
+    for firstbase in all_bases
+        for lastbase in all_bases
+            mask_first_last = get_firstbase_lastbase_mask(X, firstbase, lastbase)
+            # acc = measure(mode.(yhat[mask_first_last]), y_test[mask_first_last])
+            measure = measure_func(yhat[mask_first_last], y_test[mask_first_last])
+            push!(base_stratified_measure, measure)
+        end
+    end
+
+    base_stratified_measure_2d = permutedims(reshape(base_stratified_measure, (4, 4)))
+    measure_table = 100 .* NamedArray(base_stratified_measure_2d, (tostring.(all_bases), tostring.(all_bases)), ("Base 1", "Base 76"))
+    return measure_table
+end
+
+
+
+function Statistics.mean(x::CategoricalVector)
+    return mean(int(x) .- 1)
+end
+
+function Base.sum(x::CategoricalVector)
+    return sum(int(x) .- 1)
+end
+
+function get_base_stratified_signal_proportion(X, y_test, func=mean, datatype=Float64)
+    base_stratified_means = datatype[]
+    for firstbase in all_bases
+        for lastbase in all_bases
+            mask_first_last = get_firstbase_lastbase_mask(X, firstbase, lastbase)
+            push!(base_stratified_means, func(y_test[mask_first_last]))
+        end
+    end
+    base_stratified_means_2d = permutedims(reshape(base_stratified_means, (4, 4)))
+    acc_table = 100 .* NamedArray(base_stratified_means_2d, (tostring.(all_bases), tostring.(all_bases)), ("Base 1", "Base 76"))
+    return acc_table
+end

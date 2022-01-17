@@ -22,13 +22,13 @@ do_shap = false
 do_bases_included_accuracy = true
 save_figures = true
 
-# do_GLM = false
-# do_lgb_normal = false
-# do_evaluate = false
-# do_roc = false
-# do_shap = false
-# do_bases_included_accuracy = false
-# save_figures = false
+do_GLM = false
+do_lgb_normal = false
+do_evaluate = false
+do_roc = false
+do_shap = false
+do_bases_included_accuracy = false
+save_figures = false
 
 #%%
 
@@ -39,13 +39,19 @@ save_figures = true
 # df = DataFrame(CSV.File(filename_csv, drop = [1]));
 
 filename = "./df.data"
-N_rows = 2_000_000
+N_rows = 1_000_000
 # N_rows = 1_000
 # N_rows = -1
 
 X, y = get_Xy(filename, N_rows);
 train, test = partition(eachindex(y), 0.75; shuffle = true, rng = StableRNG(123));
 y_test = y[test];
+
+println("Signal proportion, base-stratified")
+get_base_stratified_signal_proportion(X[test, :], y_test, mean, Float64)
+get_base_stratified_signal_proportion(X[test, :], y_test, sum, Int64)
+
+
 
 
 # x = x
@@ -86,6 +92,22 @@ MLJ.save("mach_logreg__$(N_rows).jlso", mach_logreg)
 # predict(mach2, X)
 # predict(mach2, rows = test)
 
+df_logreg_long = get_df_logreg_long(mach_logreg);
+df_logreg_wide = get_df_logreg_wide(df_logreg_long)
+f_LR_fit_coef = plot_LR_fit_coefficients(df_logreg_wide)
+if save_figures
+    save("./figures/LR_fit_coefficient__$(N_rows).pdf", f_LR_fit_coef)
+end
+
+f_density_scores_logreg =
+    plot_density_scores(yhat_logreg, y_test, "Density of scores for LR")
+if save_figures
+    save("./figures/density_scores__LR__$(N_rows).pdf", f_density_scores_logreg)
+end
+
+println("AUC, base-stratified, Logistic Regression:")
+base_strat_auc_logreg =
+    get_base_stratified_measure(X[test, :], yhat_logreg, y_test, area_under_curve)
 
 if do_evaluate
     eval_logreg = evaluate(
@@ -100,13 +122,6 @@ if do_evaluate
     print_performance(eval_logreg, "Logistic Regression")
 end
 
-
-df_logreg_long = get_df_logreg_long(mach_logreg);
-df_logreg_wide = get_df_logreg_wide(df_logreg_long)
-f_LR_fit_coef = plot_LR_fit_coefficients(df_logreg_wide)
-if save_figures
-    save("./figures/LR_fit_coefficient__$(N_rows).pdf", f_LR_fit_coef)
-end
 
 
 #%%
@@ -240,6 +255,16 @@ println("Accuracy, LGB Cat, ", round(acc_lgb_cat, digits = 3))
 confusion_matrix(yhat_lgb_cat, y_test)
 
 MLJ.save("mach_lgb_cat__$(N_rows).jlso", mach_lgb_cat)
+
+f_density_scores_lgb_cat =
+    plot_density_scores(yhat_lgb_cat, y_test, "Density of scores for LGB Cat")
+if save_figures
+    save("./figures/density_scores__LGB_Cat__$(N_rows).pdf", f_density_scores_lgb_cat)
+end
+
+println("AUC, base-stratified, LightGBM Categorical:")
+base_strat_auc_lgb_cat =
+    get_base_stratified_measure(X[test, :], yhat_lgb_cat, y_test, area_under_curve)
 
 
 if do_evaluate
@@ -395,5 +420,7 @@ if do_bases_included_accuracy
 end
 
 #%%
+
+accuracies = get_accuracies_pr_base_centered(X)
 
 
