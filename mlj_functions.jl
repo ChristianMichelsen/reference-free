@@ -15,6 +15,8 @@ using Statistics
 using Distributions
 using StatsBase: weights
 using StatsBase: sample
+using StatsBase: countmap
+
 
 
 d_base2int = Dict(
@@ -464,7 +466,7 @@ function get_accuracies_pr_base(X, y, train, test)
     N_positions_vec = 1:half_seq_length
 
     accs_LR = Float64[]
-    accs_LGB_acc = Float64[]
+    accs_LGB = Float64[]
 
     X_org = copy(X)
 
@@ -487,27 +489,63 @@ function get_accuracies_pr_base(X, y, train, test)
         mach_LGB = machine(pipe_LGB, selectrows(X_cut, train), selectrows(y, train))
         fit!(mach_LGB, verbosity = 0)
         acc_LGB = accuracy(predict(mach_LGB, selectrows(X_cut, test)), selectrows(y, test))
-        push!(accs_LGB_acc, acc_LGB)
+        push!(accs_LGB, acc_LGB)
 
     end
 
     accs = [
         ("N_positions_vec", N_positions_vec),
         ("Logistic Regression", accs_LR),
-        ("LightGBM", accs_LGB_acc),
+        ("LightGBM", accs_LGB),
     ]
 
     return accs
 end
 
-function get_accuracies_pr_base_centered(X, y, train, test; add_analytical = true)
+
+function add_missing_bases!(d)
+    k = keys(d)
+    for i in 1:4
+        if !(i in k)
+            d[i] = 0
+        end
+    end
+end
+
+
+function predict_custom(X_row::DataFrameRow)
+    d = countmap(X_row)
+    add_missing_bases!(d)
+
+    AT = d[1]+d[4]
+    GC = d[3]+d[2]
+    if AT > GC
+        return 1
+    elseif AT == GC
+        return rand([0, 1])
+    else
+        return 0
+    end
+end
+
+function predict_custom(X::DataFrame, N=-1)
+    if N < 0
+        N = size(X, 1)
+    end
+    return [predict_custom(X[i, :]) for i in 1:N]
+end
+
+
+
+function get_accuracies_pr_base_centered(X, y, train, test; add_analytical = true, add_custom=true)
 
 
     half_seq_length = Int((size(X, 2)) / 2)
     N_positions_vec = 0:half_seq_length-1
 
     accs_LR = Float64[]
-    accs_LGB_acc = Float64[]
+    accs_LGB = Float64[]
+    accs_custom = Float64[]
 
     X_org = copy(X)
 
@@ -532,7 +570,14 @@ function get_accuracies_pr_base_centered(X, y, train, test; add_analytical = tru
         fit!(mach_LGB, verbosity = 0)
         acc_LGB =
             accuracy(predict(mach_LGB, selectrows(middle_X, test)), selectrows(y, test))
-        push!(accs_LGB_acc, acc_LGB)
+        push!(accs_LGB, acc_LGB)
+
+        if add_custom
+            seed!(42)
+            yhat_custom = predict_custom(selectrows(middle_X, test));
+            acc_custom = accuracy(yhat_custom, selectrows(y, test))
+            push!(accs_custom, acc_custom)
+        end
 
     end
 
@@ -540,7 +585,7 @@ function get_accuracies_pr_base_centered(X, y, train, test; add_analytical = tru
     accs = [
         ("N_positions_vec", N_positions_vec),
         ("Logistic Regression", accs_LR),
-        ("LightGBM", accs_LGB_acc),
+        ("LightGBM", accs_LGB),
     ]
 
     if add_analytical
@@ -551,6 +596,10 @@ function get_accuracies_pr_base_centered(X, y, train, test; add_analytical = tru
             weight = [1, 1],
         )
         push!(accs, ("Analytical", analytical_accuracies))
+    end
+
+    if add_custom
+        push!(accs, ("Custom", accs_custom))
     end
 
     return accs
@@ -592,6 +641,8 @@ function plot_accuracy_function_of_bases(accuracies; ylimits = (nothing, nothing
     axislegend(position = :rb)
     return f
 end
+
+
 
 
 function plot_accuracy_function_of_bases_centered(accuracies; ylimits = (nothing, nothing))

@@ -24,7 +24,7 @@ do_evaluate = false
 do_shap = false
 # do_bases_included_accuracy = false
 make_figures = false
-# save_figures = false
+save_figures = false
 
 #%%
 
@@ -376,8 +376,14 @@ if do_bases_included_accuracy
         accuracies_centered = deserialize(filename_accuracies).accuracies_centered
     else
         accuracies = get_accuracies_pr_base(X, y, train, test)
-        accuracies_centered =
-            get_accuracies_pr_base_centered(X, y, train, test; add_analytical = true)
+        accuracies_centered = get_accuracies_pr_base_centered(
+            X,
+            y,
+            train,
+            test;
+            add_analytical = true,
+            add_custom = true,
+        )
 
         serialize(
             filename_accuracies,
@@ -410,25 +416,3 @@ if do_bases_included_accuracy
 end
 
 #%%
-
-
-
-# half_seq_length = Int((size(X, 2)) / 2)
-
-# middle_idxs = half_seq_length:half_seq_length+1
-# middle_X = X[:, middle_idxs]
-
-# seed!(42);
-# mach_LR = machine(pipe_LR, middle_X, y)
-# fit!(mach_LR, rows = train, verbosity = 0)
-
-
-# accuracy(predict_mode(mach_LR, rows = test), y_test)
-
-
-# XX = DataFrame(x38 = vcat([fill(i, 4) for i = 1:4]...), x39 = repeat(collect(1:4), 4))
-# coerce!(XX, :x38 => Multiclass, :x39 => Multiclass)
-
-
-# predict(mach_LR, XX)
-# predict_mode(mach_LR, XX)
