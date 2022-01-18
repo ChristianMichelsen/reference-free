@@ -37,9 +37,15 @@ function compute_analytical_accuracies(;
     return analytical_accuracies
 end
 
+#%%
+
 using CairoMakie
 using ColorSchemes
 
+N_half = 38
+x = 1:N_half
+
+analytical_accuracies = compute_analytical_accuracies(;N_half=N_half)
 
 colormap = [x for x in ColorSchemes.Set1_9.colors]
 
@@ -53,13 +59,13 @@ ax = Axis(
     ylabel = "Accuracy",
     # limits = (0.5, half_seq_length + 0.5, 0.634, 0.701),
     # limits = (0.5, half_seq_length + 0.5, ylimits...),
-    xticks = 1:2:half_seq_length,
+    xticks = 1:2:N_half,
 )
 
 scatterlines!(
     ax,
-    bases_included,
-    accuracies,
+    x,
+    analytical_accuracies,
     color = colormap[3],
     markercolor = colormap[3],
     label = "Analytical",
@@ -69,4 +75,13 @@ axislegend(position = :rb)
 f
 
 
-weights
+#%%
+
+
+compute_analytical_accuracy(N=1, p_GC_sig = 0.4, p_GC_bkg = 0.5)
+compute_analytical_accuracy(N=2, p_GC_sig = 0.4, p_GC_bkg = 0.5)
+compute_analytical_accuracy(N=3, p_GC_sig = 0.4, p_GC_bkg = 0.5)
+compute_analytical_accuracy(N=4, p_GC_sig = 0.4, p_GC_bkg = 0.5)
+compute_analytical_accuracy(N=5, p_GC_sig = 0.4, p_GC_bkg = 0.5)
+compute_analytical_accuracy(N=6, p_GC_sig = 0.4, p_GC_bkg = 0.5)
+

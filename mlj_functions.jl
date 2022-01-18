@@ -13,7 +13,8 @@ using MLJ
 using NamedArrays
 using Statistics
 using Distributions
-using StatsBase
+using StatsBase: weights
+using StatsBase: sample
 
 
 d_base2int = Dict(
@@ -94,7 +95,7 @@ function transpose(df::DataFrame)
     return df_T
 end
 
-function get_df_logreg_long(mach::Machine)
+function get_df_LR_long(mach::Machine)
     params_raw = fitted_params(mach)
     params = hcat(
         # DataFrame(intercept = params_raw.logistic_classifier.intercept),
@@ -105,7 +106,7 @@ function get_df_logreg_long(mach::Machine)
 end
 
 
-function get_df_logreg_wide(df::DataFrame)
+function get_df_LR_wide(df::DataFrame)
     N_rows = Int(size(df, 1) // 4)
     m = permutedims(reshape(df.values, (4, N_rows)))
     return DataFrame(m, [:A, :C, :G, :T])
@@ -128,11 +129,11 @@ end
 
 #%%
 
-function print_performance(eval, model_name)
-    μ = round(eval.measurement[2], sigdigits = 5)
+function print_performance(eval, model_name, multiplier = 100, sigdigits = 3)
+    μ = round(multiplier * eval.measurement[2], sigdigits = sigdigits)
     per_fold = eval.per_fold[2]
-    σ = round(std(per_fold) / sqrt(length(per_fold)), digits = 5)
-    println("$model_name = $μ ± $σ")
+    σ = round(multiplier * std(per_fold) / sqrt(length(per_fold)), digits = sigdigits)
+    println("$model_name = ($μ ± $σ) %")
 end;
 
 #%%
@@ -207,6 +208,11 @@ function convert_type(df::DataFrame, type::DataType)
 end
 
 #%%
+
+
+function MLJBase.accuracy(yhat::MLJBase.UnivariateFiniteArray, y::MLJ.CategoricalVector)
+    return accuracy(mode.(yhat), y)
+end
 
 function MLJBase.confusion_matrix(
     yhat::MLJBase.UnivariateFiniteArray,
@@ -377,7 +383,7 @@ function plot_shap_variable(data_shap; feature = "x1", xlim = nothing, ylim = no
         x = int(data_plot.feature_value, type = Int64),
         y = data_plot.shap_effect,
         xticks = 1:4,
-        name = levels(data_plot.feature_value),
+        name = string.(levels(data_plot.feature_value)),
         baseline = baseline,
     )
 
@@ -452,13 +458,13 @@ end
 import Random.seed!;
 
 
-function get_accuracies_pr_base(X)
+function get_accuracies_pr_base(X, y, train, test)
 
     half_seq_length = Int((size(X, 2)) / 2)
     N_positions_vec = 1:half_seq_length
 
-    accs_logreg = Float64[]
-    accs_lgb_acc = Float64[]
+    accs_LR = Float64[]
+    accs_LGB_acc = Float64[]
 
     X_org = copy(X)
 
@@ -469,40 +475,39 @@ function get_accuracies_pr_base(X)
         ProgressMeter.update!(p, position)
         position += N_positions
 
-        X = hcat(X_org[:, 1:N_positions], X_org[:, end-N_positions+1:end])
+        X_cut = hcat(X_org[:, 1:N_positions], X_org[:, end-N_positions+1:end])
 
         seed!(42)
-        mach_logreg = machine(pipe_logreg, X, y)
-        fit!(mach_logreg, rows = train, verbosity = 0)
-        acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
-        push!(accs_logreg, acc_logreg)
+        mach_LR = machine(pipe_LR, selectrows(X_cut, train), selectrows(y, train))
+        fit!(mach_LR, verbosity = 0)
+        acc_LR = accuracy(predict(mach_LR, selectrows(X_cut, test)), selectrows(y, test))
+        push!(accs_LR, acc_LR)
 
         seed!(42)
-        mach_lgb_cat = machine(pipe_lgb_cat, X, y)
-        fit!(mach_lgb_cat, rows = train, verbosity = 0)
-        acc_lgb_cat = accuracy(predict_mode(mach_lgb_cat, rows = test), y_test)
-        push!(accs_lgb_acc, acc_lgb_cat)
-
+        mach_LGB = machine(pipe_LGB, selectrows(X_cut, train), selectrows(y, train))
+        fit!(mach_LGB, verbosity = 0)
+        acc_LGB = accuracy(predict(mach_LGB, selectrows(X_cut, test)), selectrows(y, test))
+        push!(accs_LGB_acc, acc_LGB)
 
     end
 
     accs = [
         ("N_positions_vec", N_positions_vec),
-        ("Logistic Regression", accs_logreg),
-        ("LightGBM (Cat)", accs_lgb_acc),
+        ("Logistic Regression", accs_LR),
+        ("LightGBM", accs_LGB_acc),
     ]
 
     return accs
 end
 
-function get_accuracies_pr_base_centered(X, add_analytical = true)
+function get_accuracies_pr_base_centered(X, y, train, test; add_analytical = true)
 
 
     half_seq_length = Int((size(X, 2)) / 2)
     N_positions_vec = 0:half_seq_length-1
 
-    accs_logreg = Float64[]
-    accs_lgb_acc = Float64[]
+    accs_LR = Float64[]
+    accs_LGB_acc = Float64[]
 
     X_org = copy(X)
 
@@ -517,24 +522,25 @@ function get_accuracies_pr_base_centered(X, add_analytical = true)
         middle_X = X_org[:, middle_idxs]
 
         seed!(42)
-        mach_logreg = machine(pipe_logreg, middle_X, y)
-        fit!(mach_logreg, rows = train, verbosity = 0)
-        acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
-        push!(accs_logreg, acc_logreg)
+        mach_LR = machine(pipe_LR, selectrows(middle_X, train), selectrows(y, train))
+        fit!(mach_LR, verbosity = 0)
+        acc_LR = accuracy(predict(mach_LR, selectrows(middle_X, test)), selectrows(y, test))
+        push!(accs_LR, acc_LR)
 
         seed!(42)
-        mach_lgb_cat = machine(pipe_lgb_cat, middle_X, y)
-        fit!(mach_lgb_cat, rows = train, verbosity = 0)
-        acc_lgb_cat = accuracy(predict_mode(mach_lgb_cat, rows = test), y_test)
-        push!(accs_lgb_acc, acc_lgb_cat)
+        mach_LGB = machine(pipe_LGB, selectrows(middle_X, train), selectrows(y, train))
+        fit!(mach_LGB, verbosity = 0)
+        acc_LGB =
+            accuracy(predict(mach_LGB, selectrows(middle_X, test)), selectrows(y, test))
+        push!(accs_LGB_acc, acc_LGB)
 
     end
 
 
     accs = [
         ("N_positions_vec", N_positions_vec),
-        ("Logistic Regression", accs_logreg),
-        ("LightGBM (Cat)", accs_lgb_acc),
+        ("Logistic Regression", accs_LR),
+        ("LightGBM", accs_LGB_acc),
     ]
 
     if add_analytical
@@ -634,7 +640,7 @@ function get_scores(yhat, label = 1)
     return pdf.(yhat, Int8(label))
 end
 
-function plot_density_scores(yhat, y_test, title = "")
+function plot_score_density(yhat, y_test, title = "")
 
     yscores = get_scores(yhat)
 

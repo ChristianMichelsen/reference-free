@@ -1,6 +1,8 @@
 old/*
 data/*
+figures/old/*
 
 *.data
 *.jlso
 *.bam
+
