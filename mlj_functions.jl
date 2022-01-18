@@ -12,7 +12,8 @@ using CategoricalArrays
 using MLJ
 using NamedArrays
 using Statistics
-
+using Distributions
+using StatsBase
 
 
 d_base2int = Dict(
@@ -22,7 +23,8 @@ d_base2int = Dict(
     DNA_G => 3,
     DNA_T => 4,
 )
-# d_int2base = Dict(i => base for (i, base) in d_base2int)
+d_int2base = Dict(i => base for (base, i) in d_base2int)
+d_int2string = Dict(i => string(Char(base)) for (base, i) in d_base2int)
 all_bases = sort(collect(keys(d_base2int)))
 base_levels = Int8.(sort(collect(values(d_base2int))))
 
@@ -151,7 +153,7 @@ function plot_LR_fit_coefficients(df)
         ylabel = "Fit coefficient (LR)",
         limits = (0.5, max_pos + 0.5, nothing, nothing),
         # xticks = 1:2:seq_length,
-        )
+    )
 
     colormap = [x for x in ColorSchemes.Set1_9.colors]
     for (i, base) in enumerate(bases)
@@ -162,10 +164,10 @@ function plot_LR_fit_coefficients(df)
             color = colormap[i],
             markercolor = colormap[i],
             label = String(base),
-            )
+        )
     end
 
-    axislegend(position = :cb, nbanks=4)
+    axislegend(position = :cb, nbanks = 4)
     return f
 end
 
@@ -207,7 +209,7 @@ end
 #%%
 
 function MLJBase.confusion_matrix(
-    yhat::MLJBase.UnivariateFiniteVector,
+    yhat::MLJBase.UnivariateFiniteArray,
     y::MLJ.CategoricalVector,
 )
     confusion_matrix(coerce(mode.(yhat), OrderedFactor), coerce(y, OrderedFactor))
@@ -247,7 +249,7 @@ function plot_roc(y_hats, y, names_roc)
     ax = Axis(f[1, 1], xlabel = "FPR", ylabel = "TPR", title = "ROC Curve")
     for (y_hat, name) in zip(y_hats, names_roc)
         fprs, tprs, ts = roc_curve(y_hat, y)
-        auc_ = round(100*area_under_curve(y_hat, y), digits=1)
+        auc_ = round(100 * area_under_curve(y_hat, y), digits = 1)
         legend_name = "$(name), AUC: $(auc_)%"
         lines!(ax, fprs, tprs, label = legend_name)
     end
@@ -469,13 +471,13 @@ function get_accuracies_pr_base(X)
 
         X = hcat(X_org[:, 1:N_positions], X_org[:, end-N_positions+1:end])
 
-        seed!(42);
+        seed!(42)
         mach_logreg = machine(pipe_logreg, X, y)
         fit!(mach_logreg, rows = train, verbosity = 0)
         acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
         push!(accs_logreg, acc_logreg)
 
-        seed!(42);
+        seed!(42)
         mach_lgb_cat = machine(pipe_lgb_cat, X, y)
         fit!(mach_lgb_cat, rows = train, verbosity = 0)
         acc_lgb_cat = accuracy(predict_mode(mach_lgb_cat, rows = test), y_test)
@@ -488,15 +490,15 @@ function get_accuracies_pr_base(X)
         ("N_positions_vec", N_positions_vec),
         ("Logistic Regression", accs_logreg),
         ("LightGBM (Cat)", accs_lgb_acc),
-    ];
+    ]
 
     return accs
 end
 
-function get_accuracies_pr_base_centered(X)
+function get_accuracies_pr_base_centered(X, add_analytical = true)
 
 
-    half_seq_length = Int((size(X, 2))/2)
+    half_seq_length = Int((size(X, 2)) / 2)
     N_positions_vec = 0:half_seq_length-1
 
     accs_logreg = Float64[]
@@ -514,13 +516,13 @@ function get_accuracies_pr_base_centered(X)
         middle_idxs = half_seq_length-N_positions:half_seq_length+N_positions+1
         middle_X = X_org[:, middle_idxs]
 
-        seed!(42);
+        seed!(42)
         mach_logreg = machine(pipe_logreg, middle_X, y)
         fit!(mach_logreg, rows = train, verbosity = 0)
         acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
         push!(accs_logreg, acc_logreg)
 
-        seed!(42);
+        seed!(42)
         mach_lgb_cat = machine(pipe_lgb_cat, middle_X, y)
         fit!(mach_lgb_cat, rows = train, verbosity = 0)
         acc_lgb_cat = accuracy(predict_mode(mach_lgb_cat, rows = test), y_test)
@@ -528,11 +530,22 @@ function get_accuracies_pr_base_centered(X)
 
     end
 
+
     accs = [
         ("N_positions_vec", N_positions_vec),
         ("Logistic Regression", accs_logreg),
         ("LightGBM (Cat)", accs_lgb_acc),
-    ];
+    ]
+
+    if add_analytical
+        analytical_accuracies = compute_analytical_accuracies(
+            N_half = half_seq_length,
+            p_GC_sig = 0.4,
+            p_GC_bkg = 0.5,
+            weight = [1, 1],
+        )
+        push!(accs, ("Analytical", analytical_accuracies))
+    end
 
     return accs
 end
@@ -540,7 +553,7 @@ end
 
 
 
-function plot_accuracy_function_of_bases(accuracies; ylimits=(nothing, nothing))
+function plot_accuracy_function_of_bases(accuracies; ylimits = (nothing, nothing))
 
     N_positions_vec = accuracies[1][2]
     seq_length = maximum(N_positions_vec)
@@ -556,8 +569,7 @@ function plot_accuracy_function_of_bases(accuracies; ylimits=(nothing, nothing))
         # limits = (0.5, seq_length + 0.5, 0.634, 0.701),
         limits = (0.5, seq_length + 0.5, ylimits...),
         xticks = 1:2:seq_length,
-        )
-
+    )
 
 
     for (i, acc) in enumerate(accuracies[2:end])
@@ -568,7 +580,7 @@ function plot_accuracy_function_of_bases(accuracies; ylimits=(nothing, nothing))
             color = colormap[i],
             markercolor = colormap[i],
             label = acc[1],
-            )
+        )
     end
 
     axislegend(position = :rb)
@@ -576,7 +588,7 @@ function plot_accuracy_function_of_bases(accuracies; ylimits=(nothing, nothing))
 end
 
 
-function plot_accuracy_function_of_bases_centered(accuracies; ylimits=(nothing, nothing))
+function plot_accuracy_function_of_bases_centered(accuracies; ylimits = (nothing, nothing))
 
     N_positions_vec = accuracies[1][2] .+ 1
     half_seq_length = maximum(N_positions_vec)
@@ -592,7 +604,7 @@ function plot_accuracy_function_of_bases_centered(accuracies; ylimits=(nothing, 
         # limits = (0.5, half_seq_length + 0.5, 0.634, 0.701),
         limits = (0.5, half_seq_length + 0.5, ylimits...),
         xticks = 1:2:half_seq_length,
-        )
+    )
 
 
 
@@ -604,7 +616,7 @@ function plot_accuracy_function_of_bases_centered(accuracies; ylimits=(nothing, 
             color = colormap[i],
             markercolor = colormap[i],
             label = acc[1],
-            )
+        )
     end
 
     axislegend(position = :rb)
@@ -622,7 +634,7 @@ function get_scores(yhat, label = 1)
     return pdf.(yhat, Int8(label))
 end
 
-function plot_density_scores(yhat, y_test, title="")
+function plot_density_scores(yhat, y_test, title = "")
 
     yscores = get_scores(yhat)
 
@@ -676,7 +688,7 @@ function get_firstbase_lastbase_mask(X, firstbase, lastbase)
 end
 
 
-function get_base_stratified_measure(X, yhat, y_test, measure_func=area_under_curve)
+function get_base_stratified_measure(X, yhat, y_test, measure_func = area_under_curve)
 
     # acc_table["A", "C"]
     # acc_table["Base 1" => "A", "Base 76" => "C"]
@@ -692,7 +704,12 @@ function get_base_stratified_measure(X, yhat, y_test, measure_func=area_under_cu
     end
 
     base_stratified_measure_2d = permutedims(reshape(base_stratified_measure, (4, 4)))
-    measure_table = 100 .* NamedArray(base_stratified_measure_2d, (tostring.(all_bases), tostring.(all_bases)), ("Base 1", "Base 76"))
+    measure_table =
+        100 .* NamedArray(
+            base_stratified_measure_2d,
+            (tostring.(all_bases), tostring.(all_bases)),
+            ("Base 1", "Base 76"),
+        )
     return measure_table
 end
 
@@ -706,7 +723,7 @@ function Base.sum(x::CategoricalVector)
     return sum(int(x) .- 1)
 end
 
-function get_base_stratified_signal_proportion(X, y_test, func=mean, datatype=Float64)
+function get_base_stratified_signal_proportion(X, y_test, func = mean, datatype = Float64)
     base_stratified_means = datatype[]
     for firstbase in all_bases
         for lastbase in all_bases
@@ -715,6 +732,108 @@ function get_base_stratified_signal_proportion(X, y_test, func=mean, datatype=Fl
         end
     end
     base_stratified_means_2d = permutedims(reshape(base_stratified_means, (4, 4)))
-    acc_table = 100 .* NamedArray(base_stratified_means_2d, (tostring.(all_bases), tostring.(all_bases)), ("Base 1", "Base 76"))
+    acc_table =
+        100 .* NamedArray(
+            base_stratified_means_2d,
+            (tostring.(all_bases), tostring.(all_bases)),
+            ("Base 1", "Base 76"),
+        )
     return acc_table
+end
+
+
+#%%
+
+
+function get_base_counts_pr_position(X; normalise = true)
+    df = vcat(
+        [DataFrame(Dict("$i" => sum(X[:, col] .== i) for i = 1:4)) for col in names(X)]...,
+    )
+    rename!(df, d_int2string)
+    if normalise
+        df = df ./ size(X, 1)
+    end
+
+    return df
+end
+
+function make_base_fraction_plot(base_counts_signal, base_counts_background)
+
+    N = size(base_counts_signal, 1)
+
+    f = Figure()
+    ax = Axis(
+        f[1, 1],
+        title = "Base fraction for signal (ancient) and background (modern)",
+        xlabel = "Read position",
+        ylabel = "Base fraction",
+        limits = (0.5, N + 0.5, 0.1, 0.4),
+        xticks = [1; collect(5:5:N)],
+    )
+
+    colormap = [color for color in ColorSchemes.Set1_9.colors]
+
+    for (i, column) in enumerate(names(base_counts_signal))
+        lines!(
+            ax,
+            1:N,
+            base_counts_signal[:, column],
+            color = colormap[i],
+            markercolor = colormap[i],
+            label = "Signal, Base: $column",
+        )
+    end
+
+    for (i, column) in enumerate(names(base_counts_background))
+        lines!(
+            ax,
+            1:N,
+            base_counts_background[:, column],
+            color = colormap[i],
+            markercolor = colormap[i],
+            label = "Background, Base: $column",
+            linestyle = :dash,
+        )
+    end
+
+    axislegend(position = :cb, nbanks = 4, orientation = :horizontal)
+    return f
+end
+
+#%%
+
+function Binom(k, N, p)
+    return pdf(Binomial(N, p), k)
+end
+
+function Binom_sum(N, p)
+    if iseven(N)
+        N -= 1
+    end
+    return sum([Binom(k, N, p) for k = N:-1:N/2])
+end
+
+
+function compute_analytical_accuracy(; N, p_GC_sig, p_GC_bkg, weight = [1, 1])
+    p_α_sig = 1 - p_GC_sig
+    p_α_bkg = 1 - p_GC_bkg
+    return mean([Binom_sum(N, p_α_sig), Binom_sum(N, p_α_bkg)], weights(weight))
+end
+
+function compute_analytical_accuracies(;
+    N_half,
+    p_GC_sig = 0.4,
+    p_GC_bkg = 0.5,
+    weight = [1, 1],
+)
+    bases_included = 1:N_half
+    analytical_accuracies = [
+        compute_analytical_accuracy(
+            N = i * 2,
+            p_GC_sig = p_GC_sig,
+            p_GC_bkg = p_GC_bkg,
+            weight = weight,
+        ) for i in bases_included
+    ]
+    return analytical_accuracies
 end

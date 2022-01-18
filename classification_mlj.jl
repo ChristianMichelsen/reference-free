@@ -22,12 +22,12 @@ do_shap = false
 do_bases_included_accuracy = true
 save_figures = true
 
-do_GLM = false
-do_lgb_normal = false
-do_evaluate = false
-do_roc = false
-do_shap = false
-do_bases_included_accuracy = false
+# do_GLM = false
+# do_lgb_normal = false
+# do_evaluate = false
+# do_roc = false
+# do_shap = false
+# do_bases_included_accuracy = false
 save_figures = false
 
 #%%
@@ -47,12 +47,33 @@ X, y = get_Xy(filename, N_rows);
 train, test = partition(eachindex(y), 0.75; shuffle = true, rng = StableRNG(123));
 y_test = y[test];
 
-println("Signal proportion, base-stratified")
-get_base_stratified_signal_proportion(X[test, :], y_test, mean, Float64)
-get_base_stratified_signal_proportion(X[test, :], y_test, sum, Int64)
+#%%
+
+x = x
+
+#%%
+
+if false
+    println("Signal proportion, base-stratified")
+    get_base_stratified_signal_proportion(X[test, :], y_test, mean, Float64)
+    get_base_stratified_signal_proportion(X[test, :], y_test, sum, Int64)
+end
+
+#%%
+
+if false
+    println("Base count fractions")
+    mask_signal = (y .== 1)
+    base_counts_signal = get_base_counts_pr_position(X[mask_signal, :], normalise = true)
+    base_counts_background =
+        get_base_counts_pr_position(X[.!mask_signal, :], normalise = true)
+    f_base_fraction = make_base_fraction_plot(base_counts_signal, base_counts_background)
+    if save_figures
+        save("./figures/base_fraction__$(N_rows).pdf", f_base_fraction)
+    end
+end
 
 
-# x = x
 
 
 #%%
@@ -71,10 +92,11 @@ get_base_stratified_signal_proportion(X[test, :], y_test, sum, Int64)
 
 LogReg = @load LogisticClassifier pkg = MLJLinearModels
 
-pipe_logreg = @pipeline(
+pipe_logreg = Pipeline(
     OneHotEncoder,
     LogReg(penalty = :none, fit_intercept = false),
-    name = "pipeline_logreg",
+    # name = "pipeline_logreg",
+    cache = false,
 )
 
 mach_logreg = machine(pipe_logreg, X, y)
@@ -82,11 +104,11 @@ fit!(mach_logreg, rows = train, verbosity = 0)
 yhat_logreg = predict(mach_logreg, rows = test);
 acc_logreg = accuracy(predict_mode(mach_logreg, rows = test), y_test)
 println("Accuracy, LogReg, ", round(acc_logreg * 100, digits = 2), "%")
-confusion_matrix(yhat_logreg, y_test)
+confusion_matrix(yhat_logreg, y_test)  # UnivariateFiniteVector
 
 MLJ.save("./data/mach_logreg__$(N_rows).jlso", mach_logreg)
 
-# mach2 = machine("mach_logreg__$(N_rows).jlso")
+# mach2 = machine("./data/mach_logreg__$(N_rows).jlso")
 # predict(mach2, X)
 # predict(mach2, rows = test)
 
@@ -134,11 +156,12 @@ end
 
 if do_GLM
 
-    pipe_GLM = @pipeline(
+    pipe_GLM = Pipeline(
         OneHotEncoder(drop_last = true),
         x -> table(Matrix(x)),
         LinearBinaryClassifier(fit_intercept = true),
-        name = "pipeline_glm",
+        # name = "pipeline_glm",
+        cache = false,
     )
 
     mach_GLM = machine(pipe_GLM, X, y)
@@ -171,11 +194,14 @@ end
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
+
+
+
 LGB = @load LGBMClassifier verbosity = 0
 
 if do_lgb_normal
 
-    pipe_lgb_normal = @pipeline(
+    pipe_lgb_normal = Pipeline(
         OneHotEncoder,
         LGB(
             objective = "binary",
@@ -187,7 +213,8 @@ if do_lgb_normal
             num_leaves = 1000,
             metric = ["auc", "binary_logloss"],
         ),
-        name = "pipeline_lgb_normal",
+        # name = "pipeline_lgb_normal",
+        cache = false,
     )
 
     mach_lgb_normal = machine(pipe_lgb_normal, X, y)
@@ -225,10 +252,9 @@ end
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 
-
 categorical_columns = collect(1:size(X)[2]);
 
-pipe_lgb_cat = @pipeline(
+pipe_lgb_cat = Pipeline(
     x -> convert_type(x, Float64),
     LGB(
         objective = "binary",
@@ -242,7 +268,8 @@ pipe_lgb_cat = @pipeline(
         categorical_feature = copy(categorical_columns),
     ),
     # yhat -> mode.(yhat)
-    name = "pipeline_lgb",
+    # name = "pipeline_lgb",
+    cache = false,
 );
 mach_lgb_cat = machine(pipe_lgb_cat, X, y);
 fit!(mach_lgb_cat, rows = train, verbosity = 0)
@@ -412,7 +439,7 @@ if do_bases_included_accuracy
         save("./figures/accuracies_base_dependent__$(N_rows).pdf", f_acc)
     end
 
-    accuracies_centered = get_accuracies_pr_base_centered(X)
+    accuracies_centered = get_accuracies_pr_base_centered(X, add_analytical=true)
     f_acc_centered = plot_accuracy_function_of_bases_centered(accuracies_centered)
     if save_figures
         save("./figures/accuracies_base_dependent_centered__$(N_rows).pdf", f_acc_centered)
@@ -423,6 +450,8 @@ if do_bases_included_accuracy
         (accuracies = accuracies, accuracies_centered = accuracies_centered),
     )
 
+    # accuracies = deserialize("./data/accuracies__$(N_rows).data").accuracies
+    # accuracies_centered = deserialize("./data/accuracies__$(N_rows).data").accuracies_centered
 
     #%%
 
@@ -431,3 +460,23 @@ end
 #%%
 
 
+
+# half_seq_length = Int((size(X, 2)) / 2)
+
+# middle_idxs = half_seq_length:half_seq_length+1
+# middle_X = X[:, middle_idxs]
+
+# seed!(42);
+# mach_logreg = machine(pipe_logreg, middle_X, y)
+# fit!(mach_logreg, rows = train, verbosity = 0)
+
+
+# accuracy(predict_mode(mach_logreg, rows = test), y_test)
+
+
+# XX = DataFrame(x38 = vcat([fill(i, 4) for i = 1:4]...), x39 = repeat(collect(1:4), 4))
+# coerce!(XX, :x38 => Multiclass, :x39 => Multiclass)
+
+
+# predict(mach_logreg, XX)
+# predict_mode(mach_logreg, XX)
