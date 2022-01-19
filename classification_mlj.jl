@@ -1,7 +1,7 @@
-using DataFrames
-using Serialization
-using BioSequences
-using MLJ
+# using DataFrames
+# using Serialization
+# using BioSequences
+# using MLJ
 using MLJGLMInterface
 using StableRNGs
 # using CSV
@@ -416,3 +416,4 @@ if do_bases_included_accuracy
 end
 
 #%%
+

@@ -12,6 +12,7 @@ using CategoricalArrays
 using MLJ
 using NamedArrays
 using Statistics
+using Serialization
 using Distributions
 using StatsBase: weights
 using StatsBase: sample
